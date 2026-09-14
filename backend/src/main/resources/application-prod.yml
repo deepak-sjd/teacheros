@@ -1,0 +1,15 @@
+spring:
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    root: WARN
+    com.teacheros: INFO
+
+app:
+  otp:
+    delivery-mode: sms # requires a real SMS/WhatsApp provider integration before going live
+
+# Fail fast in prod if required secrets are missing rather than silently using dev defaults.
+# JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD must be provided via environment/secret manager.

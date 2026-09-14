@@ -1,0 +1,13 @@
+spring:
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    root: INFO
+    com.teacheros: DEBUG
+    org.hibernate.SQL: DEBUG
+
+app:
+  otp:
+    delivery-mode: log

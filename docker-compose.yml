@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: teacheros-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teacheros
+      POSTGRES_USER: teacheros
+      POSTGRES_PASSWORD: teacheros
+    ports:
+      - "5433:5432"
+    volumes:
+      - teacheros_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teacheros"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object storage for local dev. The backend talks to this
+  # via the same S3 API it will use against AWS S3 / Cloudflare R2 /
+  # DigitalOcean Spaces in production - switching providers later is a
+  # config change (endpoint + credentials), not a code change.
+  minio:
+    image: minio/minio:latest
+    container_name: teacheros-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: teacheros
+      MINIO_ROOT_PASSWORD: teacheros123
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console (http://localhost:9001) - useful for eyeballing uploaded files during dev
+    volumes:
+      - teacheros_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: teacheros-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/teacheros
+      DB_USERNAME: teacheros
+      DB_PASSWORD: teacheros
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret-change-me}
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: teacheros
+      STORAGE_SECRET_KEY: teacheros123
+      STORAGE_BUCKET: teacheros-study-material
+    ports:
+      - "8080:8080"
+
+volumes:
+  teacheros_postgres_data:
+  teacheros_minio_data:

@@ -1,0 +1,118 @@
+export type Role = 'OWNER' | 'TEACHER' | 'STAFF' | 'STUDENT' | 'PARENT' | 'ADMIN'
+
+export interface TokenResponse {
+  accessToken: string
+  refreshToken: string
+  expiresInSeconds: number
+}
+
+export interface JwtClaims {
+  sub: string // userId
+  tenantId: string
+  role: Role
+  iat: number
+  exp: number
+}
+
+export interface Batch {
+  id: string
+  name: string
+  subject: string | null
+  scheduleSummary: string | null
+}
+
+export interface CreateBatchRequest {
+  name: string
+  subject?: string
+  scheduleSummary?: string
+}
+
+export interface Student {
+  id: string
+  fullName: string
+  grade: string | null
+  guardianPhone: string
+  phoneNumber: string | null
+  batchId: string | null
+}
+
+export interface CreateStudentRequest {
+  fullName: string
+  grade?: string
+  guardianPhone: string
+  phoneNumber?: string
+  batchId?: string
+}
+
+export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'
+
+export interface StudentAttendanceRecord {
+  studentId: string
+  status: AttendanceStatus
+}
+
+export interface MarkAttendanceRequest {
+  batchId: string
+  sessionDate: string // ISO date
+  entries: { studentId: string; status: AttendanceStatus }[]
+}
+
+export interface AttendanceSummaryResponse {
+  studentId: string
+  sessionsRecorded: number
+  sessionsAttended: number
+  attendancePercentage: number
+}
+
+export type FeeStatus = 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE'
+
+export interface Fee {
+  id: string
+  studentId: string
+  amountDue: number
+  amountPaid: number
+  dueDate: string
+  status: FeeStatus
+}
+
+export interface CreateFeeRequest {
+  studentId: string
+  amountDue: number
+  dueDate: string
+}
+
+export interface RecordPaymentRequest {
+  amountPaid: number
+  method?: string
+}
+
+export interface Page<T> {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+}
+
+export interface Homework {
+  id: string
+  batchId: string
+  title: string
+  description: string | null
+  dueDate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateHomeworkRequest {
+  batchId: string
+  title: string
+  description?: string
+  dueDate: string
+}
+
+export interface UpdateHomeworkRequest {
+  title: string
+  description?: string
+  dueDate: string
+}

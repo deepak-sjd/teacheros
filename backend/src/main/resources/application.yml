@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: teacheros-backend
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  servlet:
+    multipart:
+      # Spring's own default is 1MB, well below our intended 20MB study
+      # material limit - this must be raised or every real upload fails
+      # before HomeworkMaterialController even sees the request. Kept in
+      # sync with app.storage.max-file-size-mb below (the servlet limit is
+      # the hard ceiling; app-level validation gives a cleaner error message
+      # before hitting it in the common case).
+      max-file-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
+      max-request-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/teacheros}
+    username: ${DB_USERNAME:teacheros}
+    password: ${DB_PASSWORD:teacheros}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema is ALWAYS managed by Flyway migrations, never by Hibernate.
+      # This must never be "update" or "create" in any environment.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+app:
+  timezone: Asia/Kolkata
+  jwt:
+    # Overridden per environment - never commit a real secret.
+    secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
+    access-token-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
+    refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+  otp:
+    ttl-minutes: ${OTP_TTL_MINUTES:5}
+    # "log" prints the OTP to the application log instead of sending an SMS -
+    # used only in dev/test so nobody needs a real SMS provider to develop locally.
+    delivery-mode: ${OTP_DELIVERY_MODE:log}
+  storage:
+    # Defaults point at the localhost-mapped MinIO port for a local `mvn
+    # spring-boot:run`. When running via docker-compose, STORAGE_ENDPOINT
+    # is overridden to the internal `minio:9000` hostname - see
+    # docker-compose.yml.
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${STORAGE_ACCESS_KEY:teacheros}
+    secret-key: ${STORAGE_SECRET_KEY:teacheros123}
+    bucket: ${STORAGE_BUCKET:teacheros-study-material}
+    # Max upload size for a single study material file. Deliberately
+    # conservative for MVP - notes/PDFs/images, not full lecture videos.
+    # Revisit if/when recorded-class video upload becomes a real requirement.
+    max-file-size-mb: ${STORAGE_MAX_FILE_SIZE_MB:20}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId}] %-5level %logger{36} - %msg%n"

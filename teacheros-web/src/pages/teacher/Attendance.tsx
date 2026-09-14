@@ -1,0 +1,136 @@
+import { useEffect, useState } from 'react'
+import { api, ApiError } from '@/lib/api'
+import type { AttendanceStatus, Batch, Page, Student, StudentAttendanceRecord } from '@/lib/types'
+import { Layout, PageHeader } from '@/components/Layout'
+import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Row, Select } from '@/components/ui'
+import { todayIso } from '@/lib/format'
+
+const STATUSES: AttendanceStatus[] = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED']
+
+export function Attendance() {
+  const [batches, setBatches] = useState<Batch[]>([])
+  const [batchId, setBatchId] = useState('')
+  const [sessionDate, setSessionDate] = useState(todayIso())
+  const [students, setStudents] = useState<Student[]>([])
+  const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
+  const [existing, setExisting] = useState<StudentAttendanceRecord[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
+      setBatches(res.content)
+      if (res.content.length > 0) setBatchId(res.content[0].id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!batchId) return
+    setLoading(true)
+    setSaved(false)
+    api
+      .get<Page<Student>>('/api/v1/students', { batchId, size: 100 })
+      .then((res) => {
+        setStudents(res.content)
+        const initial: Record<string, AttendanceStatus> = {}
+        res.content.forEach((s) => (initial[s.id] = 'PRESENT'))
+        setStatuses(initial)
+      })
+      .finally(() => setLoading(false))
+  }, [batchId])
+
+  function setStatus(studentId: string, status: AttendanceStatus) {
+    setStatuses((prev) => ({ ...prev, [studentId]: status }))
+  }
+
+  async function handleSubmit() {
+    setError(null)
+    setSaving(true)
+    setSaved(false)
+    try {
+      const entries = students.map((s) => ({ studentId: s.id, status: statuses[s.id] ?? 'PRESENT' }))
+      const result = await api.post<StudentAttendanceRecord[]>('/api/v1/attendance', {
+        batchId,
+        sessionDate,
+        entries,
+      })
+      setExisting(result)
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save attendance.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Layout>
+      <PageHeader title="Attendance" description="Mark today's roster for a batch in one go." />
+
+      <div className="flex gap-4 mb-6 items-end">
+        <div className="w-64">
+          <Select label="Batch" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="w-48">
+          <Input label="Session date" type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} />
+        </div>
+      </div>
+
+      {error && <ErrorBanner message={error} />}
+      {saved && (
+        <div className="rounded-md bg-success-soft text-success text-sm px-4 py-3 mb-4 border border-success/20">
+          Attendance saved for {existing?.length ?? 0} student{(existing?.length ?? 0) === 1 ? '' : 's'}.
+        </div>
+      )}
+
+      {batches.length === 0 ? (
+        <EmptyState title="No batches to mark attendance for" description="Create a batch first." />
+      ) : loading ? (
+        <p className="text-slate text-sm">Loading roster…</p>
+      ) : students.length === 0 ? (
+        <EmptyState title="No students in this batch" description="Add students to this batch to mark attendance." />
+      ) : (
+        <>
+          <Ledger columns={['Student', 'Status']}>
+            {students.map((s) => (
+              <Row key={s.id}>
+                <Cell className="font-medium">{s.fullName}</Cell>
+                <Cell>
+                  <div className="flex gap-1.5">
+                    {STATUSES.map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => setStatus(s.id, st)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                          statuses[s.id] === st
+                            ? 'bg-ink text-paper border-ink'
+                            : 'bg-white text-slate border-line hover:border-ink'
+                        }`}
+                      >
+                        {st.charAt(0) + st.slice(1).toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                </Cell>
+              </Row>
+            ))}
+          </Ledger>
+
+          <div className="mt-5 flex justify-end">
+            <Button onClick={handleSubmit} disabled={saving}>
+              {saving ? 'Saving…' : 'Save attendance'}
+            </Button>
+          </div>
+        </>
+      )}
+    </Layout>
+  )
+}
