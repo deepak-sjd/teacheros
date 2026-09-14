@@ -11,9 +11,11 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 
@@ -43,6 +45,33 @@ public class StorageConfig {
                         AwsBasicCredentials.create(accessKey, secretKey)))
                 .forcePathStyle(true) // required for MinIO and most S3-compatible providers (bucket-in-path, not
                                       // subdomain)
+                .build();
+    }
+
+    /**
+     * Generates expiring, signed download URLs - study material is never
+     * served from a permanent public link. A student/parent's client hits
+     * our API, we check they're allowed to see that batch's material (via
+     * BatchAccessGuard), and only then hand back a URL that works for a
+     * few minutes and then stops working.
+     */
+    @Bean
+    public S3Presigner s3Presigner(
+            @Value("${app.storage.endpoint}") String endpoint,
+            @Value("${app.storage.access-key}") String accessKey,
+            @Value("${app.storage.secret-key}") String secretKey) {
+        return S3Presigner.builder()
+                .endpointOverride(URI.create(endpoint))
+                .region(Region.US_EAST_1)
+                .credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create(accessKey, secretKey)))
+                // S3Presigner has no .forcePathStyle() shortcut like S3Client -
+                // without this explicit config, presigned URLs against MinIO
+                // come out virtual-hosted-style (bucket.endpoint) and fail to
+                // resolve, since MinIO expects path-style (endpoint/bucket).
+                .serviceConfiguration(S3Configuration.builder()
+                        .pathStyleAccessEnabled(true)
+                        .build())
                 .build();
     }
 
