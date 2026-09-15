@@ -94,6 +94,22 @@ export interface Page<T> {
   size: number
 }
 
+export interface StudyMaterial {
+  id: string
+  batchId: string
+  title: string
+  description: string | null
+  originalFilename: string
+  contentType: string
+  fileSizeBytes: number
+  createdAt: string
+}
+
+export interface DownloadUrlResponse {
+  url: string
+  expiresInMinutes: number
+}
+
 export interface Homework {
   id: string
   batchId: string

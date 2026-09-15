@@ -8,6 +8,8 @@ import { Students } from '@/pages/teacher/Students'
 import { StudentDetail } from '@/pages/teacher/StudentDetail'
 import { Attendance } from '@/pages/teacher/Attendance'
 import { HomeworkPage } from '@/pages/teacher/Homework'
+import { TimetablePage } from '@/pages/teacher/Timetable'
+import { StudyMaterialPage } from '@/pages/teacher/StudyMaterial'
 import { FeesRoute } from '@/pages/FeesRoute'
 
 export default function App() {
@@ -23,6 +25,8 @@ export default function App() {
           <Route path="/app/students/:id" element={<ProtectedRoute><StudentDetail /></ProtectedRoute>} />
           <Route path="/app/attendance" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
           <Route path="/app/homework" element={<ProtectedRoute><HomeworkPage /></ProtectedRoute>} />
+          <Route path="/app/timetable" element={<ProtectedRoute><TimetablePage /></ProtectedRoute>} />
+          <Route path="/app/study-material" element={<ProtectedRoute><StudyMaterialPage /></ProtectedRoute>} />
           <Route path="/app/fees" element={<ProtectedRoute><FeesRoute /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>

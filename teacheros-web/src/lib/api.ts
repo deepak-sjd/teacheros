@@ -112,4 +112,48 @@ export const api = {
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /**
+   * File uploads can't go through request() - that function always
+   * JSON.stringifies the body and force-sets Content-Type: application/json,
+   * which breaks multipart requests (the browser needs to set its own
+   * Content-Type with a generated boundary string for FormData). This is a
+   * separate, parallel implementation of the same auth/401-refresh handling
+   * rather than a shared one, since the body handling is fundamentally
+   * different.
+   */
+  uploadFile: <T>(path: string, formData: FormData): Promise<T> => uploadMultipart<T>(path, formData),
+}
+
+async function uploadMultipart<T>(path: string, formData: FormData, retried = false): Promise<T> {
+  const url = `${BASE_URL}${path}`
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  // Deliberately NOT setting Content-Type here - the browser sets
+  // "multipart/form-data; boundary=..." automatically when the body is a
+  // FormData instance, and it can only do that correctly if we don't
+  // interfere by setting our own Content-Type header.
+
+  const res = await fetch(url, { method: 'POST', headers, body: formData })
+
+  if (res.status === 401 && !retried) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return uploadMultipart<T>(path, formData, true)
+    clearTokens()
+    window.location.href = '/login'
+    throw new ApiError(401, 'Session expired')
+  }
+
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = await res.json()
+      message = data.message ?? data.error ?? message
+    } catch {
+      // no JSON body
+    }
+    throw new ApiError(res.status, message)
+  }
+
+  return res.json()
 }
