@@ -132,3 +132,73 @@ export interface UpdateHomeworkRequest {
   description?: string
   dueDate: string
 }
+
+export interface TimetableSlot {
+  id: string
+  batchId: string
+  dayOfWeek: number // 1=Mon .. 7=Sun
+  startTime: string // "HH:mm:ss"
+  endTime: string
+  subject: string | null
+}
+
+export type NotificationType = 'LOW_ATTENDANCE' | 'FEE_DUE' | 'FEE_OVERDUE'
+
+export interface AppNotification {
+  id: string
+  studentId: string
+  type: NotificationType
+  title: string
+  message: string
+  read: boolean
+  createdAt: string
+}
+
+export interface GenerateResult {
+  created: number
+}
+
+export interface Assessment {
+  id: string
+  batchId: string
+  title: string
+  subject: string | null
+  maxMarks: number
+  testDate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateAssessmentRequest {
+  batchId: string
+  title: string
+  subject?: string
+  maxMarks: number
+  testDate: string
+}
+
+export interface UpdateAssessmentRequest {
+  title: string
+  subject?: string
+  maxMarks: number
+  testDate: string
+}
+
+export interface StudentMarkEntry {
+  studentId: string
+  marksObtained: number | null
+}
+
+export interface MarkResponse {
+  studentId: string
+  marksObtained: number | null
+}
+
+export interface StudentMarkHistoryEntry {
+  testId: string
+  testTitle: string
+  subject: string | null
+  maxMarks: number
+  marksObtained: number | null
+  testDate: string
+}

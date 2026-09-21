@@ -10,6 +10,8 @@ import { Attendance } from '@/pages/teacher/Attendance'
 import { HomeworkPage } from '@/pages/teacher/Homework'
 import { TimetablePage } from '@/pages/teacher/Timetable'
 import { StudyMaterialPage } from '@/pages/teacher/StudyMaterial'
+import { AlertsPage } from '@/pages/teacher/Alerts'
+import { TestsPage } from '@/pages/teacher/Tests'
 import { FeesRoute } from '@/pages/FeesRoute'
 
 export default function App() {
@@ -27,7 +29,9 @@ export default function App() {
           <Route path="/app/homework" element={<ProtectedRoute><HomeworkPage /></ProtectedRoute>} />
           <Route path="/app/timetable" element={<ProtectedRoute><TimetablePage /></ProtectedRoute>} />
           <Route path="/app/study-material" element={<ProtectedRoute><StudyMaterialPage /></ProtectedRoute>} />
+          <Route path="/app/tests" element={<ProtectedRoute><TestsPage /></ProtectedRoute>} />
           <Route path="/app/fees" element={<ProtectedRoute><FeesRoute /></ProtectedRoute>} />
+          <Route path="/app/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </AuthProvider>

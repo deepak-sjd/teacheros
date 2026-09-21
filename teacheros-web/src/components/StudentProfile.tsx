@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
-import type { AttendanceSummaryResponse, DownloadUrlResponse, Fee, Homework, Page, Student, StudyMaterial } from '@/lib/types'
+import type {
+  AppNotification,
+  AttendanceSummaryResponse,
+  DownloadUrlResponse,
+  Fee,
+  Homework,
+  Page,
+  Student,
+  StudentMarkHistoryEntry,
+  StudyMaterial,
+  TimetableSlot,
+} from '@/lib/types'
 import { StatBlock, Ledger, Row, Cell, StatusPill, EmptyState } from '@/components/ui'
 import { formatCurrency, formatDate } from '@/lib/format'
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -16,6 +29,9 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
   const [fees, setFees] = useState<Fee[]>([])
   const [homework, setHomework] = useState<Homework[]>([])
   const [materials, setMaterials] = useState<StudyMaterial[]>([])
+  const [slots, setSlots] = useState<TimetableSlot[]>([])
+  const [marks, setMarks] = useState<StudentMarkHistoryEntry[]>([])
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,8 +39,8 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
     setLoading(true)
     setError(null)
     // Student record is always fetched now (not just when showing the
-    // header) - homework/material are scoped by batchId, which only the
-    // student record has, so we need it even on the student's own
+    // header) - homework/material/timetable are scoped by batchId, which
+    // only the student record has, so we need it even on the student's own
     // read-only view.
     api
       .get<Student>(`/api/v1/students/${studentId}`)
@@ -39,17 +55,31 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
           s.batchId
             ? api.get<Page<StudyMaterial>>('/api/v1/study-material', { batchId: s.batchId, size: 50 })
             : Promise.resolve<Page<StudyMaterial>>({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 0 }),
+          s.batchId
+            ? api.get<TimetableSlot[]>(`/api/v1/timetable/batches/${s.batchId}`)
+            : Promise.resolve<TimetableSlot[]>([]),
+          api.get<AppNotification[]>(`/api/v1/notifications/students/${studentId}`),
+          api.get<StudentMarkHistoryEntry[]>(`/api/v1/tests/students/${studentId}/marks`),
         ])
       })
-      .then(([summ, f, hw, mat]) => {
+      .then(([summ, f, hw, mat, tt, notifs, mk]) => {
         setSummary(summ)
         setFees(f)
         setHomework(hw.content)
         setMaterials(mat.content)
+        setSlots(tt)
+        setNotifications(notifs)
+        setMarks(mk)
       })
       .catch(() => setError('Could not find that student. Double-check the ID and try again.'))
       .finally(() => setLoading(false))
   }, [studentId])
+
+  async function handleMarkNotificationRead(n: AppNotification) {
+    if (n.read) return
+    await api.patch(`/api/v1/notifications/${n.id}/read`)
+    setNotifications((prev) => prev.map((it) => (it.id === n.id ? { ...it, read: true } : it)))
+  }
 
   async function handleDownload(id: string) {
     const { url } = await api.get<DownloadUrlResponse>(`/api/v1/study-material/${id}/download-url`)
@@ -82,6 +112,85 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
         <StatBlock label="Fee records" value={String(fees.length)} />
       </div>
 
+      <h3 className="font-display text-xl text-ink mb-3">Test results</h3>
+      {marks.length === 0 ? (
+        <EmptyState title="No test results yet" description="Nothing graded for this student yet." />
+      ) : (
+        <Ledger columns={['Test', 'Subject', 'Date', 'Score']}>
+          {marks.map((m) => (
+            <Row key={m.testId}>
+              <Cell>{m.testTitle}</Cell>
+              <Cell>{m.subject ?? '\u2014'}</Cell>
+              <Cell>{formatDate(m.testDate)}</Cell>
+              <Cell className="font-medium">
+                {m.marksObtained === null ? 'Not graded' : `${m.marksObtained} / ${m.maxMarks}`}
+              </Cell>
+            </Row>
+          ))}
+        </Ledger>
+      )}
+
+      <h3 className="font-display text-xl text-ink mb-3 mt-8">Alerts</h3>
+      {notifications.length === 0 ? (
+        <EmptyState title="No alerts" description="Attendance and fee alerts from your teacher will show up here." />
+      ) : (
+        <div className="space-y-2 mb-8">
+          {notifications.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => handleMarkNotificationRead(n)}
+              className={`block w-full text-left rounded-lg border border-line p-4 transition-colors hover:bg-paper-dim/60 ${
+                n.read ? 'bg-white' : 'bg-chalk/40'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-2">
+                  {!n.read && <span className="h-2 w-2 rounded-full bg-danger shrink-0 mt-1.5" />}
+                  <div>
+                    <p className="font-medium text-ink text-sm">{n.title}</p>
+                    <p className="text-sm text-slate mt-0.5">{n.message}</p>
+                  </div>
+                </div>
+                <span className="text-xs text-slate-light whitespace-nowrap">{formatDate(n.createdAt)}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <h3 className="font-display text-xl text-ink mb-3">Timetable</h3>
+      {slots.length === 0 ? (
+        <EmptyState title="No schedule set" description="Your teacher hasn't set a weekly schedule for this batch yet." />
+      ) : (
+        <div className="grid grid-cols-7 gap-3 mb-8">
+          {DAYS.map((day, i) => {
+            const dayOfWeek = i + 1
+            const daySlots = slots
+              .filter((s) => s.dayOfWeek === dayOfWeek)
+              .sort((a, b) => a.startTime.localeCompare(b.startTime))
+            return (
+              <div key={day}>
+                <div className="text-sm font-medium text-slate mb-2">{day}</div>
+                <div className="space-y-2">
+                  {daySlots.length === 0 ? (
+                    <div className="text-xs text-slate-light">—</div>
+                  ) : (
+                    daySlots.map((slot) => (
+                      <div key={slot.id} className="rounded-md border border-line bg-white p-2 text-xs">
+                        <div className="font-medium text-ink">
+                          {slot.startTime.slice(0, 5)}–{slot.endTime.slice(0, 5)}
+                        </div>
+                        {slot.subject && <div className="text-slate">{slot.subject}</div>}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <h3 className="font-display text-xl text-ink mb-3">Homework</h3>
       {homework.length === 0 ? (
         <EmptyState title="No homework assigned" description="Nothing due for this batch right now." />
@@ -111,7 +220,7 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
                   <p className="font-medium text-ink">{m.title}</p>
                   {m.description && <p className="text-sm text-slate mt-1">{m.description}</p>}
                   <p className="text-xs text-slate mt-1">
-                    {m.originalFilename} \u00b7 {formatFileSize(m.fileSizeBytes)}
+                    {m.originalFilename} {'\u00b7'} {formatFileSize(m.fileSizeBytes)}
                   </p>
                 </div>
                 <button

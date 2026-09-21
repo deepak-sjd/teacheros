@@ -14,6 +14,13 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
 
     Page<Student> findByTenantIdAndActiveTrue(UUID tenantId, Pageable pageable);
 
+    /**
+     * Unpaged variant used by NotificationService#generateLowAttendanceAlerts -
+     * it has to walk every active student in the tenant to compute each
+     * one's attendance percentage, so pagination doesn't apply there.
+     */
+    List<Student> findAllByTenantIdAndActiveTrue(UUID tenantId);
+
     Page<Student> findByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId, Pageable pageable);
 
     List<Student> findByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId);

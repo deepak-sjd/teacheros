@@ -17,7 +17,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/homework', label: 'Homework' },
     { to: '/app/timetable', label: 'Timetable' },
     { to: '/app/study-material', label: 'Study Material' },
+    { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
   ],
   ADMIN: [
     { to: '/app', label: 'Overview' },
@@ -27,7 +29,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/homework', label: 'Homework' },
     { to: '/app/timetable', label: 'Timetable' },
     { to: '/app/study-material', label: 'Study Material' },
+    { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
   ],
   TEACHER: [
     { to: '/app', label: 'Overview' },
@@ -37,12 +41,15 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/homework', label: 'Homework' },
     { to: '/app/timetable', label: 'Timetable' },
     { to: '/app/study-material', label: 'Study Material' },
+    { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
   ],
   STAFF: [
     { to: '/app', label: 'Overview' },
     { to: '/app/students', label: 'Students' },
     { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
   ],
   PARENT: [{ to: '/app', label: 'My Children' }],
   STUDENT: [

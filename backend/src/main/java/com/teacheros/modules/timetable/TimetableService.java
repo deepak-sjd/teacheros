@@ -43,9 +43,31 @@ public class TimetableService {
         batchRepository.findByIdAndTenantId(request.batchId(), tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Batch", request.batchId()));
 
+        assertNoOverlap(tenantId, request.batchId(), request.dayOfWeek(), request);
+
         TimetableSlot slot = new TimetableSlot(tenantId, request.batchId(), request.dayOfWeek(),
                 request.startTime(), request.endTime(), request.subject());
         return toResponse(timetableSlotRepository.save(slot));
+    }
+
+    /**
+     * Rejects a new slot that overlaps an existing one for the same batch
+     * and day. Two ranges [aStart,aEnd) and [bStart,bEnd) overlap exactly
+     * when aStart < bEnd AND bStart < aEnd - the classic interval-overlap
+     * check, not just an equality comparison.
+     */
+    private void assertNoOverlap(UUID tenantId, UUID batchId, int dayOfWeek, CreateSlotRequest request) {
+        List<TimetableSlot> sameDaySlots = timetableSlotRepository
+                .findByTenantIdAndBatchIdAndDayOfWeek(tenantId, batchId, dayOfWeek);
+
+        boolean overlaps = sameDaySlots.stream()
+                .anyMatch(existing -> request.startTime().isBefore(existing.getEndTime())
+                        && existing.getStartTime().isBefore(request.endTime()));
+
+        if (overlaps) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SLOT_OVERLAP",
+                    "This time overlaps an existing slot for this batch on that day.");
+        }
     }
 
     // Open to PARENT/STUDENT via the controller (no @PreAuthorize there) -

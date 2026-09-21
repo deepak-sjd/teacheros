@@ -12,5 +12,7 @@ public interface TimetableSlotRepository extends JpaRepository<TimetableSlot, UU
 
     List<TimetableSlot> findByTenantIdAndBatchIdOrderByDayOfWeekAscStartTimeAsc(UUID tenantId, UUID batchId);
 
+    List<TimetableSlot> findByTenantIdAndBatchIdAndDayOfWeek(UUID tenantId, UUID batchId, int dayOfWeek);
+
     void deleteByIdAndTenantId(UUID id, UUID tenantId);
 }

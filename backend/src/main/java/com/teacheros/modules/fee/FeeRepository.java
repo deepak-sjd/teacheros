@@ -15,4 +15,11 @@ public interface FeeRepository extends JpaRepository<Fee, UUID> {
     List<Fee> findByTenantIdAndStudentId(UUID tenantId, UUID studentId);
 
     Page<Fee> findByTenantIdAndStatusIn(UUID tenantId, List<FeeStatus> statuses, Pageable pageable);
+
+    /**
+     * Unpaged variant used by NotificationService#generateFeeReminders - it
+     * has to walk every outstanding fee in the tenant in one pass to check
+     * each against the dedupe cooldown, so pagination doesn't apply there.
+     */
+    List<Fee> findAllByTenantIdAndStatusIn(UUID tenantId, List<FeeStatus> statuses);
 }
