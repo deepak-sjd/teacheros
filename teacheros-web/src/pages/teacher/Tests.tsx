@@ -11,6 +11,7 @@ export function TestsPage() {
   const [tests, setTests] = useState<Assessment[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editing, setEditing] = useState<Assessment | null>(null)
   const [grading, setGrading] = useState<Assessment | null>(null)
 
   useEffect(() => {
@@ -94,6 +95,12 @@ export function TestsPage() {
                         Grade
                       </button>
                       <button
+                        onClick={() => setEditing(t)}
+                        className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                      >
+                        Edit
+                      </button>
+                      <button
                         onClick={() => handleDelete(t.id)}
                         className="text-sm text-danger hover:opacity-80 underline underline-offset-2"
                       >
@@ -114,6 +121,15 @@ export function TestsPage() {
         onClose={() => setCreateOpen(false)}
         onCreated={() => {
           setCreateOpen(false)
+          load(batchId)
+        }}
+      />
+
+      <EditTestModal
+        test={editing}
+        onClose={() => setEditing(null)}
+        onUpdated={() => {
+          setEditing(null)
           load(batchId)
         }}
       />
@@ -191,6 +207,96 @@ function CreateTestModal({
           </Button>
           <Button type="submit" disabled={saving}>
             {saving ? 'Creating…' : 'Create test'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/**
+ * Editing a test never touches its marks - only title/subject/max marks/
+ * date change via PATCH /api/v1/tests/{id}. Grading stays a separate flow
+ * (the Grade button), same separation the backend draws between
+ * AssessmentService#update and #submitMarks.
+ */
+function EditTestModal({
+  test,
+  onClose,
+  onUpdated,
+}: {
+  test: Assessment | null
+  onClose: () => void
+  onUpdated: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [subject, setSubject] = useState('')
+  const [maxMarks, setMaxMarks] = useState('')
+  const [testDate, setTestDate] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Re-sync the form fields every time a different test is opened for
+  // editing - the modal instance is shared across all tests in the list.
+  useEffect(() => {
+    if (test) {
+      setTitle(test.title)
+      setSubject(test.subject ?? '')
+      setMaxMarks(String(test.maxMarks))
+      setTestDate(test.testDate)
+      setError(null)
+    }
+  }, [test])
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!test) return
+    setError(null)
+
+    const parsedMax = Number(maxMarks)
+    if (!title.trim() || !parsedMax || parsedMax <= 0) {
+      setError('Enter a title and a max marks value above 0.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await api.patch(`/api/v1/tests/${test.id}`, {
+        title,
+        subject: subject || undefined,
+        maxMarks: parsedMax,
+        testDate,
+      })
+      onUpdated()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update this test.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={test !== null} onClose={onClose} title="Edit test">
+      {error && <ErrorBanner message={error} />}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        <Input label="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        <Input
+          label="Max marks"
+          type="number"
+          min="1"
+          step="0.5"
+          value={maxMarks}
+          onChange={(e) => setMaxMarks(e.target.value)}
+          required
+        />
+        <Input label="Test date" type="date" value={testDate} onChange={(e) => setTestDate(e.target.value)} required />
+        <div className="flex gap-2 justify-end pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
       </form>
