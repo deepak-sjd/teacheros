@@ -51,10 +51,23 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
   ],
-  PARENT: [{ to: '/app', label: 'My Children' }],
+  PARENT: [
+    { to: '/app', label: 'Overview' },
+    { to: '/app/timetable', label: 'Timetable' },
+    { to: '/app/homework', label: 'Homework' },
+    { to: '/app/study-material', label: 'Study Material' },
+    { to: '/app/tests', label: 'Tests & Marks' },
+    { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
+  ],
   STUDENT: [
-    { to: '/app', label: 'My Attendance' },
-    { to: '/app/fees', label: 'My Fees' },
+    { to: '/app', label: 'Overview' },
+    { to: '/app/timetable', label: 'Timetable' },
+    { to: '/app/homework', label: 'Homework' },
+    { to: '/app/study-material', label: 'Study Material' },
+    { to: '/app/tests', label: 'Tests & Marks' },
+    { to: '/app/fees', label: 'Fees' },
+    { to: '/app/alerts', label: 'Alerts' },
   ],
 }
 

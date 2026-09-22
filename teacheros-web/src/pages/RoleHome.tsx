@@ -1,12 +1,9 @@
 import { useAuth } from '@/lib/auth'
 import { Overview } from '@/pages/teacher/Overview'
-import { MyChildren } from '@/pages/parent/MyChildren'
-import { MyAttendance } from '@/pages/student/MyAttendance'
+import { StudentOverview } from '@/pages/student/Overview'
 
 export function RoleHome() {
   const { role } = useAuth()
-
-  if (role === 'PARENT') return <MyChildren />
-  if (role === 'STUDENT') return <MyAttendance />
+  if (role === 'STUDENT' || role === 'PARENT') return <StudentOverview />
   return <Overview />
 }

@@ -4,6 +4,6 @@ import { MyFees } from '@/pages/student/MyFees'
 
 export function FeesRoute() {
   const { role } = useAuth()
-  if (role === 'STUDENT') return <MyFees />
+  if (role === 'STUDENT' || role === 'PARENT') return <MyFees />
   return <Fees />
 }
