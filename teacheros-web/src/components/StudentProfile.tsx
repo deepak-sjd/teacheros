@@ -13,6 +13,7 @@ import type {
   TimetableSlot,
 } from '@/lib/types'
 import { StatBlock, Ledger, Row, Cell, StatusPill, EmptyState } from '@/components/ui'
+import { MessageThread } from '@/components/MessageThread'
 import { formatCurrency, formatDate } from '@/lib/format'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -157,6 +158,11 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
           ))}
         </div>
       )}
+
+      <h3 className="font-display text-xl text-ink mb-3 mt-8">Messages</h3>
+      <div className="mb-8">
+        <MessageThread studentId={studentId} />
+      </div>
 
       <h3 className="font-display text-xl text-ink mb-3">Timetable</h3>
       {slots.length === 0 ? (

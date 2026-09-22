@@ -158,6 +158,17 @@ export interface GenerateResult {
   created: number
 }
 
+export type SenderRole = 'PARENT' | 'STAFF'
+
+export interface Message {
+  id: string
+  senderRole: SenderRole
+  senderName: string
+  body: string
+  mine: boolean
+  createdAt: string
+}
+
 export interface Assessment {
   id: string
   batchId: string

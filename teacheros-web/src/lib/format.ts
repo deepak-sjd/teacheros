@@ -11,6 +11,13 @@ export function formatDate(iso: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso)
+  const isToday = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+  return isToday ? time : `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${time}`
+}
+
 export function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
