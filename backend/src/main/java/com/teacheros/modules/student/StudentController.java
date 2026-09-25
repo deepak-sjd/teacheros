@@ -2,6 +2,7 @@ package com.teacheros.modules.student;
 
 import com.teacheros.modules.student.dto.StudentDtos.CreateStudentRequest;
 import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
+import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +27,13 @@ public class StudentController {
     @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
     public ResponseEntity<StudentResponse> create(@Valid @RequestBody CreateStudentRequest request) {
         return ResponseEntity.ok(studentService.create(request));
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<StudentResponse> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateStudentRequest request) {
+        return ResponseEntity.ok(studentService.update(id, request));
     }
 
     @GetMapping

@@ -10,6 +10,7 @@ export function Students() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<Student | null>(null)
 
   function load() {
     setLoading(true)
@@ -45,7 +46,7 @@ export function Students() {
           action={<Button onClick={() => setModalOpen(true)}>Add student</Button>}
         />
       ) : (
-        <Ledger columns={['Name', 'Grade', 'Batch', 'Guardian phone', '']}>
+        <Ledger columns={['Name', 'Grade', 'Batch', 'Guardian phone', '', '']}>
           {students.map((s) => (
             <Row key={s.id}>
               <Cell className="font-medium">{s.fullName}</Cell>
@@ -57,17 +58,36 @@ export function Students() {
                   View
                 </Link>
               </Cell>
+              <Cell>
+                <button
+                  onClick={() => setEditing(s)}
+                  className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                >
+                  Edit
+                </button>
+              </Cell>
             </Row>
           ))}
         </Ledger>
       )}
 
-      <NewStudentModal
+      <StudentFormModal
         open={modalOpen}
         batches={batches}
         onClose={() => setModalOpen(false)}
-        onCreated={() => {
+        onSaved={() => {
           setModalOpen(false)
+          load()
+        }}
+      />
+
+      <StudentFormModal
+        open={editing !== null}
+        student={editing}
+        batches={batches}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null)
           load()
         }}
       />
@@ -75,52 +95,72 @@ export function Students() {
   )
 }
 
-function NewStudentModal({
+function StudentFormModal({
   open,
+  student,
   batches,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   open: boolean
+  student?: Student | null
   batches: Batch[]
   onClose: () => void
-  onCreated: () => void
+  onSaved: () => void
 }) {
+  const isEdit = !!student
+
   const [fullName, setFullName] = useState('')
   const [grade, setGrade] = useState('')
   const [guardianPhone, setGuardianPhone] = useState('')
   const [studentPhone, setStudentPhone] = useState('')
+  const [guardianEmail, setGuardianEmail] = useState('')
   const [batchId, setBatchId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // Re-sync form fields whenever a different student is opened for editing
+  // (or the "add" modal opens fresh) - this modal instance is reused rather
+  // than remounted, so state won't reset on its own.
+  useEffect(() => {
+    if (!open) return
+    setFullName(student?.fullName ?? '')
+    setGrade(student?.grade ?? '')
+    setGuardianPhone(student?.guardianPhone ?? '')
+    setStudentPhone(student?.phoneNumber ?? '')
+    setGuardianEmail(student?.guardianEmail ?? '')
+    setBatchId(student?.batchId ?? '')
+    setError(null)
+  }, [open, student])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSaving(true)
     try {
-      await api.post('/api/v1/students', {
+      const body = {
         fullName,
         grade: grade || undefined,
         guardianPhone,
         phoneNumber: studentPhone || undefined,
+        guardianEmail: guardianEmail || undefined,
         batchId: batchId || undefined,
-      })
-      setFullName('')
-      setGrade('')
-      setGuardianPhone('')
-      setStudentPhone('')
-      setBatchId('')
-      onCreated()
+      }
+      if (isEdit && student) {
+        await api.patch(`/api/v1/students/${student.id}`, body)
+      } else {
+        await api.post('/api/v1/students', body)
+      }
+      onSaved()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add the student.')
+      setError(err instanceof ApiError ? err.message : `Could not ${isEdit ? 'update' : 'add'} the student.`)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add student">
+    <Modal open={open} onClose={onClose} title={isEdit ? 'Edit student' : 'Add student'}>
       {error && <ErrorBanner message={error} />}
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
@@ -138,6 +178,13 @@ function NewStudentModal({
           onChange={(e) => setStudentPhone(e.target.value)}
           placeholder="Only if the student should log in themselves"
         />
+        <Input
+          label="Guardian email (optional)"
+          type="email"
+          value={guardianEmail}
+          onChange={(e) => setGuardianEmail(e.target.value)}
+          placeholder="For email alerts, in addition to SMS"
+        />
         <Select label="Batch" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
           <option value="">No batch yet</option>
           {batches.map((b) => (
@@ -151,7 +198,7 @@ function NewStudentModal({
             Cancel
           </Button>
           <Button type="submit" disabled={saving}>
-            {saving ? 'Adding\u2026' : 'Add student'}
+            {saving ? (isEdit ? 'Saving\u2026' : 'Adding\u2026') : isEdit ? 'Save changes' : 'Add student'}
           </Button>
         </div>
       </form>
