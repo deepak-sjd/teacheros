@@ -28,8 +28,9 @@ export function StudentCheckIn() {
     setCameraError(null)
     setError(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      streamRef.current = stream
+     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+     streamRef.current = stream
+     console.log('Camera track:', stream.getVideoTracks()[0]?.label, stream.getVideoTracks()[0]?.getSettings())
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -99,8 +100,14 @@ export function StudentCheckIn() {
           {!scanning ? (
             <Button onClick={startCamera}>Open camera</Button>
           ) : (
-            <div className="relative rounded-lg overflow-hidden border border-line">
-              <video ref={videoRef} className="w-full" muted playsInline />
+           <div className="relative rounded-lg overflow-hidden border border-line min-h-[240px] flex items-center justify-center bg-paper-dim/40">
+            <video
+                ref={videoRef}
+                className="w-full h-[240px] object-cover"
+                autoPlay
+                muted
+                playsInline
+            />
               <canvas ref={canvasRef} className="hidden" />
               <Button variant="secondary" className="absolute bottom-3 right-3" onClick={stopCamera}>
                 Cancel

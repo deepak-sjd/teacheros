@@ -6,8 +6,8 @@ export function Ledger({ columns, children }: { columns: string[]; children: Rea
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line bg-paper-dim">
-            {columns.map((c) => (
-              <th key={c} className="text-left font-medium text-slate px-4 py-3">
+            {columns.map((c, i) => (
+              <th key={i} className="text-left font-medium text-slate px-4 py-3">
                 {c}
               </th>
             ))}
