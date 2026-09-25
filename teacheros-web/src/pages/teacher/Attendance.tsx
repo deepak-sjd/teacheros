@@ -3,6 +3,7 @@ import { api, ApiError } from '@/lib/api'
 import type { AttendanceStatus, Batch, Page, Student, StudentAttendanceRecord } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Row, Select } from '@/components/ui'
+import { AttendanceQrModal } from '@/components/AttendanceQrModal'
 import { todayIso } from '@/lib/format'
 
 const STATUSES: AttendanceStatus[] = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED']
@@ -18,6 +19,7 @@ export function Attendance() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -82,7 +84,12 @@ export function Attendance() {
         <div className="w-48">
           <Input label="Session date" type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} />
         </div>
+        <Button variant="secondary" onClick={() => setQrOpen(true)} disabled={!batchId}>
+          Show QR
+        </Button>
       </div>
+
+      <AttendanceQrModal open={qrOpen} onClose={() => setQrOpen(false)} batchId={batchId} sessionDate={sessionDate} />
 
       {error && <ErrorBanner message={error} />}
       {saved && (

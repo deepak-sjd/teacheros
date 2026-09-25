@@ -48,4 +48,21 @@ public class AttendanceController {
     public ResponseEntity<List<BatchSessionSummary>> listSessionsForBatch(@PathVariable UUID batchId) {
         return ResponseEntity.ok(attendanceService.listSessionsForBatch(batchId));
     }
+
+    // Teacher displays this as a QR code for students to scan.
+    @PostMapping("/qr-token")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<com.teacheros.modules.attendance.dto.AttendanceDtos.QrTokenResponse> generateQrToken(
+            @Valid @RequestBody com.teacheros.modules.attendance.dto.AttendanceDtos.QrTokenRequest request) {
+        return ResponseEntity.ok(attendanceService.generateQrToken(request.batchId(), request.sessionDate()));
+    }
+
+    // Student scans the QR and calls this themselves - restricted to
+    // STUDENT since it self-marks the caller's own linked student record.
+    @PostMapping("/self-checkin")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<StudentAttendanceRecord> selfCheckIn(
+            @Valid @RequestBody com.teacheros.modules.attendance.dto.AttendanceDtos.QrCheckInRequest request) {
+        return ResponseEntity.ok(attendanceService.selfCheckIn(request.token()));
+    }
 }

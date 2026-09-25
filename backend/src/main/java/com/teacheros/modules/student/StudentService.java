@@ -39,6 +39,30 @@ public class StudentService {
         Student student = new Student(tenantId, request.batchId(), request.fullName(),
                 request.grade(), request.guardianPhone());
         student.setPhoneNumber(request.phoneNumber());
+        student.setGuardianEmail(request.guardianEmail());
+        student = studentRepository.save(student);
+        return toResponse(student);
+    }
+
+    /**
+     * Staff-only (see controller's @PreAuthorize) - a student/parent editing
+     * their own contact details isn't supported yet, this is the teacher
+     * correcting/completing a record, e.g. adding the student's own phone
+     * after the fact so they can log in themselves.
+     */
+    @Transactional
+    public StudentResponse update(UUID studentId,
+            com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+
+        student.setFullName(request.fullName());
+        student.setGrade(request.grade());
+        student.setGuardianPhone(request.guardianPhone());
+        student.setPhoneNumber(request.phoneNumber());
+        student.setGuardianEmail(request.guardianEmail());
+        student.setBatchId(request.batchId());
         student = studentRepository.save(student);
         return toResponse(student);
     }
@@ -102,6 +126,7 @@ public class StudentService {
 
     private StudentResponse toResponse(Student student) {
         return new StudentResponse(student.getId(), student.getFullName(), student.getGrade(),
-                student.getGuardianPhone(), student.getPhoneNumber(), student.getBatchId());
+                student.getGuardianPhone(), student.getPhoneNumber(), student.getGuardianEmail(),
+                student.getBatchId());
     }
 }

@@ -16,6 +16,21 @@ spring:
       max-file-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
       max-request-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
 
+  # Only used when app.email.provider=smtp. Left at harmless localhost
+  # defaults otherwise since SmtpEmailSender isn't even instantiated
+  # (@ConditionalOnProperty) when provider=log.
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/teacheros}
     username: ${DB_USERNAME:teacheros}
@@ -51,7 +66,23 @@ app:
     ttl-minutes: ${OTP_TTL_MINUTES:5}
     # "log" prints the OTP to the application log instead of sending an SMS -
     # used only in dev/test so nobody needs a real SMS provider to develop locally.
+    # "sms" sends via Twilio - requires app.sms.twilio.* below.
     delivery-mode: ${OTP_DELIVERY_MODE:log}
+  sms:
+    # "log" (dev default) prints alert SMS instead of sending them.
+    # "twilio" sends real SMS via Twilio - also used for OTP delivery
+    # when app.otp.delivery-mode=sms, sharing the same Twilio account.
+    provider: ${SMS_PROVIDER:log}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      from-number: ${TWILIO_FROM_NUMBER:}
+  email:
+    # "log" (dev default) prints emails instead of sending them.
+    # "smtp" sends real email via Spring Mail - works with SES, SendGrid,
+    # Postmark, or a Gmail relay, depending on the host/port/credentials.
+    provider: ${EMAIL_PROVIDER:log}
+    from-address: ${EMAIL_FROM_ADDRESS:no-reply@teacheros.app}
   storage:
     # Defaults point at the localhost-mapped MinIO port for a local `mvn
     # spring-boot:run`. When running via docker-compose, STORAGE_ENDPOINT

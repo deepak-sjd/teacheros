@@ -33,6 +33,7 @@ export interface Student {
   grade: string | null
   guardianPhone: string
   phoneNumber: string | null
+  guardianEmail: string | null
   batchId: string | null
 }
 
@@ -41,6 +42,7 @@ export interface CreateStudentRequest {
   grade?: string
   guardianPhone: string
   phoneNumber?: string
+  guardianEmail?: string
   batchId?: string
 }
 
@@ -55,6 +57,11 @@ export interface MarkAttendanceRequest {
   batchId: string
   sessionDate: string // ISO date
   entries: { studentId: string; status: AttendanceStatus }[]
+}
+
+export interface QrTokenResponse {
+  token: string
+  expiresAt: string
 }
 
 export interface AttendanceSummaryResponse {
@@ -156,17 +163,6 @@ export interface AppNotification {
 
 export interface GenerateResult {
   created: number
-}
-
-export type SenderRole = 'PARENT' | 'STAFF'
-
-export interface Message {
-  id: string
-  senderRole: SenderRole
-  senderName: string
-  body: string
-  mine: boolean
-  createdAt: string
 }
 
 export interface Assessment {

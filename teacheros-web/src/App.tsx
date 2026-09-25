@@ -13,6 +13,7 @@ import { HomeworkRoute } from '@/pages/HomeworkRoute'
 import { StudyMaterialRoute } from '@/pages/StudyMaterialRoute'
 import { TestsRoute } from '@/pages/TestsRoute'
 import { AlertsRoute } from '@/pages/AlertsRoute'
+import { StudentCheckIn } from '@/pages/student/CheckIn'
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/app/tests" element={<ProtectedRoute><TestsRoute /></ProtectedRoute>} />
           <Route path="/app/fees" element={<ProtectedRoute><FeesRoute /></ProtectedRoute>} />
           <Route path="/app/alerts" element={<ProtectedRoute><AlertsRoute /></ProtectedRoute>} />
+          <Route path="/app/checkin" element={<ProtectedRoute><StudentCheckIn /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </AuthProvider>

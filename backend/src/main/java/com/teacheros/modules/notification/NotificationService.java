@@ -39,6 +39,8 @@ public class NotificationService {
     private final FeeRepository feeRepository;
     private final StudentAccessGuard studentAccessGuard;
     private final CurrentTenantProvider currentTenantProvider;
+    private final SmsSender smsSender;
+    private final EmailSender emailSender;
 
     public NotificationService(
             NotificationRepository notificationRepository,
@@ -46,13 +48,31 @@ public class NotificationService {
             AttendanceRepository attendanceRepository,
             FeeRepository feeRepository,
             StudentAccessGuard studentAccessGuard,
-            CurrentTenantProvider currentTenantProvider) {
+            CurrentTenantProvider currentTenantProvider,
+            SmsSender smsSender,
+            EmailSender emailSender) {
         this.notificationRepository = notificationRepository;
         this.studentRepository = studentRepository;
         this.attendanceRepository = attendanceRepository;
         this.feeRepository = feeRepository;
         this.studentAccessGuard = studentAccessGuard;
         this.currentTenantProvider = currentTenantProvider;
+        this.smsSender = smsSender;
+        this.emailSender = emailSender;
+    }
+
+    // Every alert is recorded in-app first (source of truth for the parent
+    // portal) and then best-effort pushed out by SMS/email if the guardian
+    // has that contact info on file. Delivery failures are swallowed inside
+    // the senders themselves - a bad phone number must never roll back the
+    // Notification row or block the rest of the batch.
+    private void deliver(Student student, String title, String message) {
+        if (student.getGuardianPhone() != null && !student.getGuardianPhone().isBlank()) {
+            smsSender.send(student.getGuardianPhone(), message);
+        }
+        if (student.getGuardianEmail() != null && !student.getGuardianEmail().isBlank()) {
+            emailSender.send(student.getGuardianEmail(), title, message);
+        }
     }
 
     @Transactional
@@ -80,6 +100,7 @@ public class NotificationService {
                     .formatted(student.getFullName(), percentage, thresholdPercentage);
             notificationRepository.save(new Notification(tenantId, student.getId(),
                     NotificationType.LOW_ATTENDANCE, "Attendance alert", message));
+            deliver(student, "Attendance alert", message);
             created++;
         }
 
@@ -108,6 +129,8 @@ public class NotificationService {
             String title = type == NotificationType.FEE_OVERDUE ? "Fee overdue" : "Fee due soon";
             String message = "A fee of ₹%s is due on %s.".formatted(fee.getAmountDue(), fee.getDueDate());
             notificationRepository.save(new Notification(tenantId, fee.getStudentId(), type, title, message));
+            studentRepository.findByIdAndTenantId(fee.getStudentId(), tenantId)
+                    .ifPresent(student -> deliver(student, title, message));
             created++;
         }
 

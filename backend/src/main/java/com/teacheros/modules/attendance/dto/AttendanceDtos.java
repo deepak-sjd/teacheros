@@ -54,4 +54,20 @@ public class AttendanceDtos {
             int lateCount,
             int totalCount) {
     }
+
+    /** Teacher-side: request a QR token to display for a batch's session. */
+    public record QrTokenRequest(
+            @NotNull UUID batchId,
+            @NotNull LocalDate sessionDate) {
+    }
+
+    public record QrTokenResponse(
+            String token,
+            java.time.Instant expiresAt) {
+    }
+
+    /** Student-side: what they submit after scanning the teacher's QR code. */
+    public record QrCheckInRequest(
+            @NotNull String token) {
+    }
 }

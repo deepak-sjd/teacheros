@@ -33,6 +33,12 @@ public class Student {
     @Column(name = "guardian_phone", nullable = false)
     private String guardianPhone;
 
+    // Optional - lets low-attendance/fee alerts be emailed to the guardian,
+    // in addition to the in-app notification. Nullable by design; most
+    // schools will only have the phone number on file.
+    @Column(name = "guardian_email")
+    private String guardianEmail;
+
     // Optional - lets the student log in and view their own attendance/fees
     // directly, separately from the guardian_phone their parent uses. Most
     // students won't have this set, especially younger ones - that's fine,

@@ -32,18 +32,27 @@ public class AttendanceService {
     private final BatchRepository batchRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final StudentAccessGuard studentAccessGuard;
+    private final AttendanceQrTokenService qrTokenService;
+    private final com.teacheros.modules.student.StudentRepository studentRepository;
+    private final com.teacheros.modules.user.UserRepository userRepository;
 
     public AttendanceService(
             AttendanceRepository attendanceRepository,
             ClassSessionRepository classSessionRepository,
             BatchRepository batchRepository,
             CurrentTenantProvider currentTenantProvider,
-            StudentAccessGuard studentAccessGuard) {
+            StudentAccessGuard studentAccessGuard,
+            AttendanceQrTokenService qrTokenService,
+            com.teacheros.modules.student.StudentRepository studentRepository,
+            com.teacheros.modules.user.UserRepository userRepository) {
         this.attendanceRepository = attendanceRepository;
         this.classSessionRepository = classSessionRepository;
         this.batchRepository = batchRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.studentAccessGuard = studentAccessGuard;
+        this.qrTokenService = qrTokenService;
+        this.studentRepository = studentRepository;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -72,6 +81,80 @@ public class AttendanceService {
                 .map(entry -> upsertAttendance(tenantId, session.getId(), entry, userId))
                 .map(a -> new StudentAttendanceRecord(a.getStudentId(), a.getStatus()))
                 .toList();
+    }
+
+    /**
+     * Teacher taps "Show QR" for today's session. Creates (or reuses) the
+     * ClassSession up front, same as markAttendance does, so selfCheckIn
+     * below never has to worry about "does this session exist yet."
+     */
+    @Transactional
+    public com.teacheros.modules.attendance.dto.AttendanceDtos.QrTokenResponse generateQrToken(UUID batchId,
+            java.time.LocalDate sessionDate) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+
+        batchRepository.findByIdAndTenantId(batchId, tenantId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "BATCH_NOT_FOUND", "Batch not found"));
+
+        classSessionRepository.findByTenantIdAndBatchIdAndSessionDate(tenantId, batchId, sessionDate)
+                .orElseGet(() -> classSessionRepository.save(new ClassSession(tenantId, batchId, sessionDate)));
+
+        String token = qrTokenService.issue(tenantId, batchId, sessionDate);
+        return new com.teacheros.modules.attendance.dto.AttendanceDtos.QrTokenResponse(
+                token, qrTokenService.expiryFor(java.time.Instant.now()));
+    }
+
+    /**
+     * Student scans the QR and this marks THEIR OWN attendance PRESENT for
+     * that session - no teacher/staff round-trip. Every check is a hard
+     * failure, not a soft "ignore and continue", because this is the one
+     * attendance path a student controls themselves:
+     * - token invalid/expired -> ask them to re-scan
+     * - token's tenant doesn't match the caller's tenant -> reject
+     * - caller has no linked student record, or it's in a different batch
+     * than the token -> reject (stops a student checking into someone
+     * else's class)
+     */
+    @Transactional
+    public StudentAttendanceRecord selfCheckIn(String token) {
+        AttendanceQrTokenService.QrPayload payload = qrTokenService.verify(token)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "QR_EXPIRED_OR_INVALID",
+                        "This QR code has expired. Ask your teacher to show a fresh one."));
+
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        if (!payload.tenantId().equals(tenantId)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "QR_EXPIRED_OR_INVALID", "This QR code is not valid here.");
+        }
+
+        UUID userId = currentTenantProvider.getCurrentUserId();
+        String phoneNumber = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found - this should never happen"))
+                .getPhoneNumber();
+
+        var student = studentRepository.findFirstByTenantIdAndPhoneNumberAndActiveTrue(tenantId, phoneNumber)
+                .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "NO_STUDENT_RECORD",
+                        "No student record is linked to this account."));
+
+        if (!payload.batchId().equals(student.getBatchId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WRONG_BATCH",
+                    "This QR code is for a different batch than yours.");
+        }
+
+        ClassSession session = classSessionRepository
+                .findByTenantIdAndBatchIdAndSessionDate(tenantId, payload.batchId(), payload.sessionDate())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND",
+                        "This session no longer exists."));
+
+        Attendance attendance = attendanceRepository
+                .findByTenantIdAndClassSessionIdAndStudentId(tenantId, session.getId(), student.getId())
+                .orElseGet(() -> new Attendance(tenantId, session.getId(), student.getId(),
+                        AttendanceStatus.PRESENT, userId));
+        attendance.setStatus(AttendanceStatus.PRESENT);
+        attendance.setMarkedByUserId(userId);
+        attendance.setMarkedAt(java.time.Instant.now());
+        attendance = attendanceRepository.save(attendance);
+
+        return new StudentAttendanceRecord(attendance.getStudentId(), attendance.getStatus());
     }
 
     private Attendance upsertAttendance(UUID tenantId, UUID sessionId, StudentAttendanceEntry entry, UUID userId) {

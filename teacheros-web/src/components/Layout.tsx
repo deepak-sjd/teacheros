@@ -62,6 +62,7 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
   ],
   STUDENT: [
     { to: '/app', label: 'Overview' },
+    { to: '/app/checkin', label: 'Check In' },
     { to: '/app/timetable', label: 'Timetable' },
     { to: '/app/homework', label: 'Homework' },
     { to: '/app/study-material', label: 'Study Material' },

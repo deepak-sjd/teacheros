@@ -9,7 +9,11 @@ logging:
 
 app:
   otp:
-    delivery-mode: sms # requires a real SMS/WhatsApp provider integration before going live
+    delivery-mode: sms # Twilio - requires TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER env vars
+  sms:
+    provider: twilio # requires TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER env vars
+  email:
+    provider: smtp # requires SMTP_HOST/PORT/USERNAME/PASSWORD env vars
 
 # Fail fast in prod if required secrets are missing rather than silently using dev defaults.
 # JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD must be provided via environment/secret manager.
