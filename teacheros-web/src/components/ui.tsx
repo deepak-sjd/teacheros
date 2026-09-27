@@ -2,7 +2,7 @@ import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, ty
 
 export function Ledger({ columns, children }: { columns: string[]; children: ReactNode }) {
   return (
-    <div className="border border-line rounded-lg overflow-hidden bg-white">
+    <div className="border border-line rounded-lg overflow-x-auto bg-white">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line bg-paper-dim">

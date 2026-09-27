@@ -9,8 +9,8 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 interface Slot {
   id: string
   batchId: string
-  dayOfWeek: number // 1-7
-  startTime: string // "HH:mm:ss"
+  dayOfWeek: number
+  startTime: string
   endTime: string
   subject: string | null
 }
@@ -82,7 +82,8 @@ export function TimetablePage() {
               action={<Button onClick={() => setCreateOpen(true)}>New slot</Button>}
             />
           ) : (
-            <div className="grid grid-cols-7 gap-3">
+            <div className="overflow-x-auto">
+            <div className="grid grid-cols-7 gap-3 min-w-[640px]">
               {DAYS.map((day, i) => (
                 <div key={day}>
                   <div className="text-sm font-medium text-slate mb-2">{day}</div>
@@ -104,6 +105,7 @@ export function TimetablePage() {
                   </div>
                 </div>
               ))}
+            </div>
             </div>
           )}
         </>

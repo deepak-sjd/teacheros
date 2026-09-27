@@ -71,7 +71,7 @@ export function Attendance() {
     <Layout>
       <PageHeader title="Attendance" description="Mark today's roster for a batch in one go." />
 
-      <div className="flex gap-4 mb-6 items-end">
+      <div className="flex flex-wrap gap-4 mb-6 items-end">
         <div className="w-64">
           <Select label="Batch" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
             {batches.map((b) => (

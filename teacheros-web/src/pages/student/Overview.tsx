@@ -33,7 +33,7 @@ function OverviewPanel({ student }: { student: Student }) {
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatBlock
           label="Attendance"
           value={summary ? `${summary.attendancePercentage.toFixed(0)}%` : '\u2014'}

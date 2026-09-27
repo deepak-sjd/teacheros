@@ -36,7 +36,7 @@ export function Overview() {
         <p className="text-slate text-sm">Loading…</p>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-4 mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
             <StatBlock label="Active batches" value={String(batches.length)} />
             <StatBlock label="Students enrolled" value={String(students?.totalElements ?? 0)} />
             <StatBlock
