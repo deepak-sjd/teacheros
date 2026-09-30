@@ -14,6 +14,8 @@ app:
     provider: twilio # requires TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER env vars
   email:
     provider: smtp # requires SMTP_HOST/PORT/USERNAME/PASSWORD env vars
+  ai:
+    provider: ollama # free, self-hosted - requires Ollama running & reachable at OLLAMA_BASE_URL with OLLAMA_MODEL pulled. Override to "anthropic" (paid) only if you decide that's worth it.
 
 # Fail fast in prod if required secrets are missing rather than silently using dev defaults.
 # JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD must be provided via environment/secret manager.

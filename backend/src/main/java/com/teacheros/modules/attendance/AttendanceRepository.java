@@ -69,4 +69,29 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
             """)
     long countAttendedInRange(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
             @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * Every non-cancelled attendance record in a date range, tenant-wide or
+     * narrowed to one batch (null batchId = every batch) - the raw rows
+     * AnalyticsService groups by session date and turns into a daily
+     * attendance-percentage trend. Left ungrouped here (unlike
+     * countRecordedInRange/countAttendedInRange, which each return one
+     * total) since the per-day breakdown is what the caller actually needs.
+     */
+    @Query("""
+            SELECT cs.sessionDate AS sessionDate, a.status AS status
+            FROM Attendance a
+            JOIN ClassSession cs ON cs.id = a.classSessionId
+            WHERE a.tenantId = :tenantId AND cs.cancelled = false
+            AND cs.sessionDate BETWEEN :from AND :to
+            AND (:batchId IS NULL OR cs.batchId = :batchId)
+            """)
+    List<AttendanceRecordRow> findRecordsInRange(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
+            @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    interface AttendanceRecordRow {
+        LocalDate getSessionDate();
+
+        AttendanceStatus getStatus();
+    }
 }

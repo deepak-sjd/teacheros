@@ -40,6 +40,18 @@ public class TimetableSlot {
     // subject so this is usually left null and the batch's subject is used.
     private String subject;
 
+    // Optional video-call link for this recurring slot (Zoom/Google Meet/
+    // Teams/other). Set/cleared independently of the slot's day/time via
+    // TimetableService#updateMeetingLink, not just at creation - a teacher
+    // adding or swapping a link shouldn't have to delete and recreate the
+    // whole slot.
+    @Column(name = "meeting_link", length = 500)
+    private String meetingLink;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "meeting_platform", length = 20)
+    private MeetingPlatform meetingPlatform;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

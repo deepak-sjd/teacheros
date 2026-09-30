@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface FeePaymentRepository extends JpaRepository<FeePayment, UUID> {
     List<FeePayment> findByTenantIdAndFeeId(UUID tenantId, UUID feeId);
 
+    boolean existsByTenantIdAndGatewayPaymentId(UUID tenantId, String gatewayPaymentId);
+
     // Used by ReportService for the "collected this period" figure.
     // COALESCE guards the no-payments-yet case, where SUM(...) alone would
     // return NULL instead of zero.

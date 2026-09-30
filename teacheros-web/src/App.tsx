@@ -13,7 +13,12 @@ import { HomeworkRoute } from '@/pages/HomeworkRoute'
 import { StudyMaterialRoute } from '@/pages/StudyMaterialRoute'
 import { TestsRoute } from '@/pages/TestsRoute'
 import { AlertsRoute } from '@/pages/AlertsRoute'
+import { ReportsPage } from '@/pages/teacher/Reports'
 import { StudentCheckIn } from '@/pages/student/CheckIn'
+import { StudentDoubts } from '@/pages/student/Doubts'
+import { StudentMessages } from '@/pages/student/Messages'
+import { StudentTakeTest } from '@/pages/student/TakeTest'
+
 
 export default function App() {
   return (
@@ -33,7 +38,12 @@ export default function App() {
           <Route path="/app/tests" element={<ProtectedRoute><TestsRoute /></ProtectedRoute>} />
           <Route path="/app/fees" element={<ProtectedRoute><FeesRoute /></ProtectedRoute>} />
           <Route path="/app/alerts" element={<ProtectedRoute><AlertsRoute /></ProtectedRoute>} />
+          <Route path="/app/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
           <Route path="/app/checkin" element={<ProtectedRoute><StudentCheckIn /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/app" replace />} />
+          <Route path="/app/doubts" element={<ProtectedRoute><StudentDoubts /></ProtectedRoute>} />
+          <Route path="/app/messages" element={<ProtectedRoute><StudentMessages /></ProtectedRoute>} />
+          <Route path="/app/take-test" element={<ProtectedRoute><StudentTakeTest /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </AuthProvider>

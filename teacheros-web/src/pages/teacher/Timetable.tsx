@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
-import type { Batch, Page } from '@/lib/types'
+import type { Batch, MeetingPlatform, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner, Input, Modal, Select } from '@/components/ui'
+import { MEETING_PLATFORM_LABELS } from '@/lib/format'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MEETING_PLATFORMS: MeetingPlatform[] = ['ZOOM', 'GOOGLE_MEET', 'MICROSOFT_TEAMS', 'OTHER']
 
 interface Slot {
   id: string
@@ -13,6 +15,8 @@ interface Slot {
   startTime: string
   endTime: string
   subject: string | null
+  meetingLink: string | null
+  meetingPlatform: MeetingPlatform | null
 }
 
 export function TimetablePage() {
@@ -21,6 +25,7 @@ export function TimetablePage() {
   const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [linkSlot, setLinkSlot] = useState<Slot | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -94,12 +99,19 @@ export function TimetablePage() {
                           {slot.startTime.slice(0, 5)}–{slot.endTime.slice(0, 5)}
                         </div>
                         {slot.subject && <div className="text-slate">{slot.subject}</div>}
-                        <button
-                          onClick={() => handleDelete(slot.id)}
-                          className="text-danger hover:underline mt-1"
-                        >
-                          Remove
-                        </button>
+                        {slot.meetingLink && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-success-soft text-success px-2 py-0.5">
+                            {MEETING_PLATFORM_LABELS[slot.meetingPlatform ?? 'OTHER']}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button onClick={() => setLinkSlot(slot)} className="text-slate hover:text-ink hover:underline">
+                            {slot.meetingLink ? 'Edit link' : 'Add link'}
+                          </button>
+                          <button onClick={() => handleDelete(slot.id)} className="text-danger hover:underline">
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -120,7 +132,112 @@ export function TimetablePage() {
           load(batchId)
         }}
       />
+
+      <EditMeetingLinkModal
+        slot={linkSlot}
+        onClose={() => setLinkSlot(null)}
+        onSaved={() => {
+          setLinkSlot(null)
+          load(batchId)
+        }}
+      />
     </Layout>
+  )
+}
+
+function EditMeetingLinkModal({
+  slot,
+  onClose,
+  onSaved,
+}: {
+  slot: Slot | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [platform, setPlatform] = useState<MeetingPlatform>('ZOOM')
+  const [link, setLink] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (slot) {
+      setPlatform(slot.meetingPlatform ?? 'ZOOM')
+      setLink(slot.meetingLink ?? '')
+      setError(null)
+    }
+  }, [slot])
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!slot) return
+    setError(null)
+    setSaving(true)
+    try {
+      await api.patch(`/api/v1/timetable/${slot.id}/meeting-link`, {
+        meetingLink: link || undefined,
+        meetingPlatform: link ? platform : undefined,
+      })
+      onSaved()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the meeting link.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    if (!slot) return
+    setSaving(true)
+    try {
+      await api.patch(`/api/v1/timetable/${slot.id}/meeting-link`, {})
+      onSaved()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not remove the meeting link.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={slot !== null} onClose={onClose} title="Video call link">
+      {error && <ErrorBanner message={error} />}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Select label="Platform" value={platform} onChange={(e) => setPlatform(e.target.value as MeetingPlatform)}>
+          {MEETING_PLATFORMS.map((p) => (
+            <option key={p} value={p}>
+              {MEETING_PLATFORM_LABELS[p]}
+            </option>
+          ))}
+        </Select>
+        <Input
+          label="Meeting link"
+          type="url"
+          placeholder="https://zoom.us/j/…"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+        />
+        <p className="text-xs text-slate-light">
+          Students and parents will see a "Join" button on this slot whenever class is on.
+        </p>
+        <div className="flex gap-2 justify-between pt-2">
+          {slot?.meetingLink ? (
+            <Button type="button" variant="danger" onClick={handleRemove} disabled={saving}>
+              Remove link
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : 'Save link'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

@@ -66,6 +66,40 @@ public class FeeService {
         return toResponse(fee, totalPaid);
     }
 
+    /**
+     * Called by PaymentService after Razorpay's signature check passes.
+     * Separate from recordPayment (the staff-manual-entry path) because
+     * this one is idempotent: Razorpay's checkout can call the success
+     * callback more than once for the same payment (retries, double-taps),
+     * and recording the same gatewayPaymentId twice would double-credit
+     * the fee.
+     */
+    @Transactional
+    public FeeResponse recordGatewayPayment(UUID feeId, BigDecimal amountPaid, String method,
+            String gatewayOrderId, String gatewayPaymentId) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Fee fee = feeRepository.findByIdAndTenantId(feeId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fee", feeId));
+
+        if (feePaymentRepository.existsByTenantIdAndGatewayPaymentId(tenantId, gatewayPaymentId)) {
+            // Already recorded from an earlier callback - return the
+            // current state rather than erroring, so a retried callback
+            // still gets a clean 200 instead of a confusing failure.
+            return toResponse(fee, sumPayments(tenantId, fee.getId()));
+        }
+
+        FeePayment payment = new FeePayment(tenantId, fee.getId(), amountPaid, method);
+        payment.setGatewayOrderId(gatewayOrderId);
+        payment.setGatewayPaymentId(gatewayPaymentId);
+        feePaymentRepository.save(payment);
+
+        BigDecimal totalPaid = sumPayments(tenantId, fee.getId());
+        fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid));
+        fee = feeRepository.save(fee);
+
+        return toResponse(fee, totalPaid);
+    }
+
     public FeeResponse get(UUID feeId) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         Fee fee = feeRepository.findByIdAndTenantId(feeId, tenantId)

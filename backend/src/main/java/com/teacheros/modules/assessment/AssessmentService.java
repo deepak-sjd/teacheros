@@ -10,9 +10,15 @@ import com.teacheros.modules.assessment.dto.MarkDtos.MarkResponse;
 import com.teacheros.modules.assessment.dto.MarkDtos.StudentMarkEntry;
 import com.teacheros.modules.assessment.dto.MarkDtos.StudentMarkHistoryEntry;
 import com.teacheros.modules.assessment.dto.MarkDtos.SubmitMarksRequest;
+import com.teacheros.modules.assessment.dto.RankingDtos.BatchRankingEntry;
+import com.teacheros.modules.assessment.dto.RankingDtos.BatchRankingResponse;
+import com.teacheros.modules.assessment.dto.RankingDtos.StudentRankResponse;
+import com.teacheros.modules.batch.Batch;
 import com.teacheros.modules.batch.BatchAccessGuard;
 import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.student.Student;
 import com.teacheros.modules.student.StudentAccessGuard;
+import com.teacheros.modules.student.StudentRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -20,8 +26,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class AssessmentService {
@@ -29,6 +39,7 @@ public class AssessmentService {
     private final AssessmentRepository assessmentRepository;
     private final MarkRepository markRepository;
     private final BatchRepository batchRepository;
+    private final StudentRepository studentRepository;
     private final BatchAccessGuard batchAccessGuard;
     private final StudentAccessGuard studentAccessGuard;
     private final CurrentTenantProvider currentTenantProvider;
@@ -37,12 +48,14 @@ public class AssessmentService {
             AssessmentRepository assessmentRepository,
             MarkRepository markRepository,
             BatchRepository batchRepository,
+            StudentRepository studentRepository,
             BatchAccessGuard batchAccessGuard,
             StudentAccessGuard studentAccessGuard,
             CurrentTenantProvider currentTenantProvider) {
         this.assessmentRepository = assessmentRepository;
         this.markRepository = markRepository;
         this.batchRepository = batchRepository;
+        this.studentRepository = studentRepository;
         this.batchAccessGuard = batchAccessGuard;
         this.studentAccessGuard = studentAccessGuard;
         this.currentTenantProvider = currentTenantProvider;
@@ -58,6 +71,13 @@ public class AssessmentService {
 
         Assessment assessment = new Assessment(tenantId, request.batchId(), request.title(), request.subject(),
                 request.maxMarks(), request.testDate(), userId);
+
+        // null testType defaults to OFFLINE, as the DTO comment says
+        assessment.setTestType(request.testType() != null ? request.testType() : TestType.OFFLINE);
+        assessment.setDurationMinutes(request.durationMinutes());
+        assessment.setAvailableFrom(request.availableFrom());
+        assessment.setAvailableUntil(request.availableUntil());
+
         return toResponse(assessmentRepository.save(assessment));
     }
 
@@ -171,9 +191,132 @@ public class AssessmentService {
                 .toList();
     }
 
+    /**
+     * Staff-only leaderboard for a batch - every active student's rank,
+     * name, and average score, sorted best-first. Same "classmates' results
+     * are a staff privilege" rule as listMarksForTest: PARENT/STUDENT get
+     * getStudentRank below instead, which never exposes another student's
+     * name or score.
+     */
+    public BatchRankingResponse getBatchRanking(UUID batchId) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Batch batch = batchRepository.findByIdAndTenantId(batchId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Batch", batchId));
+
+        List<BatchRankingEntry> entries = computeRanking(tenantId, batchId);
+        long rankedCount = entries.stream().filter(e -> e.rank() != null).count();
+        return new BatchRankingResponse(batchId, batch.getName(), rankedCount, entries);
+    }
+
+    /**
+     * PARENT/STUDENT-safe view: this one student's own rank and how many
+     * classmates they're ranked against, guarded per-student via
+     * StudentAccessGuard - same pattern as getStudentMarkHistory.
+     */
+    public StudentRankResponse getStudentRank(UUID studentId) {
+        studentAccessGuard.assertCanView(studentId);
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+
+        if (student.getBatchId() == null) {
+            // Not assigned to a batch yet - nothing to rank against.
+            return new StudentRankResponse(studentId, null, null, 0, 0.0, 0);
+        }
+
+        List<BatchRankingEntry> entries = computeRanking(tenantId, student.getBatchId());
+        long rankedCount = entries.stream().filter(e -> e.rank() != null).count();
+        BatchRankingEntry mine = entries.stream()
+                .filter(e -> e.studentId().equals(studentId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Student " + studentId + " missing from their own batch's ranking - should never happen"));
+
+        return new StudentRankResponse(studentId, student.getBatchId(), mine.rank(), rankedCount,
+                mine.averagePercentage(), mine.gradedTestCount());
+    }
+
+    /**
+     * Shared by both ranking endpoints above. A student's rank is their
+     * average score percentage across every graded mark in this batch's
+     * tests, all-time - not scoped to a period, unlike ReportService's
+     * figures, since "what's my rank" is naturally an ongoing standing, not
+     * a this-week snapshot. Ties share the same rank (standard competition
+     * ranking: 1, 2, 2, 4 - not 1, 2, 2, 3), and a student with zero graded
+     * marks gets rank=null rather than being force-ranked last, since "no
+     * data yet" and "ranked lowest" are different things a parent shouldn't
+     * confuse.
+     */
+    private List<BatchRankingEntry> computeRanking(UUID tenantId, UUID batchId) {
+        List<Student> students = studentRepository.findByTenantIdAndBatchIdAndActiveTrue(tenantId, batchId);
+        Map<UUID, List<MarkRepository.StudentScore>> scoresByStudent = markRepository
+                .findScoresForBatch(tenantId, batchId).stream()
+                .collect(Collectors.groupingBy(MarkRepository.StudentScore::getStudentId));
+
+        record Scored(Student student, double averagePercentage, long gradedCount) {
+        }
+
+        List<Scored> scored = students.stream()
+                .map(s -> {
+                    List<MarkRepository.StudentScore> mine = scoresByStudent.getOrDefault(s.getId(), List.of());
+                    double avg = mine.isEmpty() ? 0.0
+                            : round1(mine.stream()
+                                    .mapToDouble(m -> m.getMarksObtained().doubleValue() / m.getMaxMarks().doubleValue()
+                                            * 100)
+                                    .average()
+                                    .orElse(0.0));
+                    return new Scored(s, avg, mine.size());
+                })
+                .toList();
+
+        List<Scored> ranked = scored.stream()
+                .filter(s -> s.gradedCount() > 0)
+                .sorted(Comparator.comparingDouble(Scored::averagePercentage).reversed()
+                        .thenComparing(s -> s.student().getFullName()))
+                .toList();
+
+        List<Scored> unranked = scored.stream()
+                .filter(s -> s.gradedCount() == 0)
+                .sorted(Comparator.comparing(s -> s.student().getFullName()))
+                .toList();
+
+        List<BatchRankingEntry> entries = new ArrayList<>();
+        Double previousAverage = null;
+        int previousRank = 0;
+        int position = 0;
+        for (Scored s : ranked) {
+            position++;
+            int rank = (previousAverage != null && Double.compare(s.averagePercentage(), previousAverage) == 0)
+                    ? previousRank
+                    : position;
+            entries.add(new BatchRankingEntry(s.student().getId(), s.student().getFullName(), rank,
+                    s.averagePercentage(), s.gradedCount()));
+            previousAverage = s.averagePercentage();
+            previousRank = rank;
+        }
+        for (Scored s : unranked) {
+            entries.add(new BatchRankingEntry(s.student().getId(), s.student().getFullName(), null, 0.0, 0));
+        }
+        return entries;
+    }
+
+    private double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     private AssessmentResponse toResponse(Assessment assessment) {
-        return new AssessmentResponse(assessment.getId(), assessment.getBatchId(), assessment.getTitle(),
-                assessment.getSubject(), assessment.getMaxMarks(), assessment.getTestDate(),
-                assessment.getCreatedAt(), assessment.getUpdatedAt());
+        return new AssessmentResponse(
+                assessment.getId(),
+                assessment.getBatchId(),
+                assessment.getTitle(),
+                assessment.getSubject(),
+                assessment.getMaxMarks(),
+                assessment.getTestDate(),
+                assessment.getTestType(),
+                assessment.getDurationMinutes(),
+                assessment.getAvailableFrom(),
+                assessment.getAvailableUntil(),
+                assessment.getCreatedAt(),
+                assessment.getUpdatedAt());
     }
 }

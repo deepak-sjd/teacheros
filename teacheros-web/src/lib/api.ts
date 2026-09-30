@@ -122,6 +122,53 @@ export const api = {
    * different.
    */
   uploadFile: <T>(path: string, formData: FormData): Promise<T> => uploadMultipart<T>(path, formData),
+  /**
+   * Downloads a server-generated file (PDF reports/report cards) and saves
+   * it via the browser. Can't reuse request() - that always parses the
+   * response as JSON - and can't be a plain <a href> either, since the
+   * PDF endpoints require an Authorization header the browser has no way
+   * to attach to a plain navigation/anchor click.
+   */
+  downloadFile: (path: string, filename: string) => downloadWithAuth(path, filename),
+}
+
+async function downloadWithAuth(path: string, filename: string, retried = false): Promise<void> {
+  const url = `${BASE_URL}${path}`
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(url, { headers })
+
+  if (res.status === 401 && !retried) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return downloadWithAuth(path, filename, true)
+    clearTokens()
+    window.location.href = '/login'
+    throw new ApiError(401, 'Session expired')
+  }
+
+  if (!res.ok) {
+    let message = res.statusText
+    try {
+      const data = await res.json()
+      message = data.message ?? data.error ?? message
+    } catch {
+      // no JSON body (expected here - errors on this endpoint still come back as JSON,
+      // but a non-JSON body shouldn't blow up the error path)
+    }
+    throw new ApiError(res.status, message)
+  }
+
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(objectUrl)
 }
 
 async function uploadMultipart<T>(path: string, formData: FormData, retried = false): Promise<T> {

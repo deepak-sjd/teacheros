@@ -140,6 +140,8 @@ export interface UpdateHomeworkRequest {
   dueDate: string
 }
 
+export type MeetingPlatform = 'ZOOM' | 'GOOGLE_MEET' | 'MICROSOFT_TEAMS' | 'OTHER'
+
 export interface TimetableSlot {
   id: string
   batchId: string
@@ -147,6 +149,15 @@ export interface TimetableSlot {
   startTime: string // "HH:mm:ss"
   endTime: string
   subject: string | null
+  meetingLink: string | null
+  meetingPlatform: MeetingPlatform | null
+}
+
+// A blank/omitted meetingLink clears the link (and platform) entirely -
+// see TimetableService#updateMeetingLink on the backend.
+export interface UpdateMeetingLinkRequest {
+  meetingLink?: string
+  meetingPlatform?: MeetingPlatform
 }
 
 export type NotificationType = 'LOW_ATTENDANCE' | 'FEE_DUE' | 'FEE_OVERDUE'
@@ -165,6 +176,8 @@ export interface GenerateResult {
   created: number
 }
 
+export type TestType = 'OFFLINE' | 'ONLINE_MCQ'
+
 export interface Assessment {
   id: string
   batchId: string
@@ -172,6 +185,10 @@ export interface Assessment {
   subject: string | null
   maxMarks: number
   testDate: string
+  testType: TestType
+  durationMinutes: number | null
+  availableFrom: string | null
+  availableUntil: string | null
   createdAt: string
   updatedAt: string
 }
@@ -182,6 +199,10 @@ export interface CreateAssessmentRequest {
   subject?: string
   maxMarks: number
   testDate: string
+  testType?: TestType
+  durationMinutes?: number
+  availableFrom?: string
+  availableUntil?: string
 }
 
 export interface UpdateAssessmentRequest {
@@ -208,4 +229,261 @@ export interface StudentMarkHistoryEntry {
   maxMarks: number
   marksObtained: number | null
   testDate: string
+}
+
+// Mirrors MarkDtos.StudentRankResponse. rank/percentage are null when the
+// student has no graded marks yet in their batch - totalStudents is still
+// populated either way. Anonymous/aggregate-only by design - see the
+// backend javadoc on why this is safe to show a PARENT/STUDENT while raw
+// per-student marks for a test are staff-only.
+export interface StudentRank {
+  totalMarksObtained: number
+  totalMaxMarks: number
+  percentage: number | null
+  rank: number | null
+  totalStudents: number
+}
+
+// --- Messages (parent-teacher messaging) ---
+// Mirrors backend/.../modules/message/dto/MessageDtos.java exactly.
+
+export type SenderRole = 'PARENT' | 'STAFF'
+
+export interface Message {
+  id: string
+  senderRole: SenderRole
+  senderName: string
+  body: string
+  // Whether the CALLER's side sent this message, resolved server-side -
+  // see MessageDtos.MessageResponse's javadoc. Lets the UI align bubbles
+  // without needing to know the viewer's own role.
+  mine: boolean
+  createdAt: string
+}
+
+// --- Reports ---
+// Mirrors backend/.../modules/report/dto/ReportDtos.java exactly. Nothing
+// here is stored server-side - a report is computed fresh on every
+// GET /api/v1/reports/summary call from existing attendance/fee/mark rows.
+
+export interface BatchAttendanceRow {
+  batchId: string
+  batchName: string
+  sessions: number
+  presentCount: number
+  attendancePercentage: number
+}
+
+export interface AttendanceReportSummary {
+  totalSessions: number
+  presentCount: number
+  attendancePercentage: number
+  byBatch: BatchAttendanceRow[]
+}
+
+// Tenant-wide, not per-batch - Fee has no batchId in the schema, so a
+// per-batch fee breakdown isn't something the backend can honestly produce.
+export interface FeeReportSummary {
+  collectedInPeriod: number
+  totalOutstanding: number
+  pendingCount: number
+  overdueCount: number
+}
+
+export interface BatchMarksRow {
+  batchId: string
+  batchName: string
+  testsConducted: number
+  gradedEntries: number
+  averageScorePercentage: number
+}
+
+export interface MarksReportSummary {
+  testsConducted: number
+  gradedEntries: number
+  averageScorePercentage: number
+  byBatch: BatchMarksRow[]
+}
+
+export interface ReportSummary {
+  from: string
+  to: string
+  batchId: string | null
+  attendance: AttendanceReportSummary
+  fees: FeeReportSummary
+  marks: MarksReportSummary
+}
+
+// --- Analytics dashboard ---
+// Mirrors backend/.../modules/analytics/dto/AnalyticsDtos.java exactly.
+// Unlike ReportSummary (a point-in-time table for a chosen range), these
+// are shaped specifically for the Overview page's two charts.
+
+export interface AttendanceTrendPoint {
+  date: string // ISO date
+  sessionsRecorded: number
+  sessionsAttended: number
+  attendancePercentage: number
+}
+
+export interface AttendanceTrendResponse {
+  from: string
+  to: string
+  batchId: string | null
+  points: AttendanceTrendPoint[]
+}
+
+export interface SubjectPerformancePoint {
+  subject: string
+  gradedEntries: number
+  averagePercentage: number
+}
+
+export interface SubjectPerformanceResponse {
+  from: string
+  to: string
+  batchId: string | null
+  points: SubjectPerformancePoint[]
+}
+
+// --- AI doubt solving ---
+
+export type DoubtSender = 'STUDENT' | 'AI'
+
+export interface DoubtMessage {
+  id: string
+  sender: DoubtSender
+  body: string
+  createdAt: string
+}
+
+export interface AskDoubtRequest {
+  question: string
+}
+
+export interface DoubtThreadResponse {
+  messages: DoubtMessage[]
+  questionsAskedToday: number
+  dailyQuestionLimit: number
+}
+
+export interface AskDoubtResponse {
+  question: DoubtMessage
+  answer: DoubtMessage
+}
+
+// ---- Online MCQ tests ----
+
+export interface QuestionInput {
+  questionText: string
+  optionA: string
+  optionB: string
+  optionC: string
+  optionD: string
+  correctOption: 'A' | 'B' | 'C' | 'D'
+  marks: number
+}
+
+export interface QuestionResponse extends QuestionInput {
+  id: string
+  position: number
+}
+
+export interface QuestionForStudent {
+  id: string
+  questionText: string
+  optionA: string
+  optionB: string
+  optionC: string
+  optionD: string
+  marks: number
+  position: number
+}
+
+export interface StartTestResponse {
+  attemptId: string
+  testId: string
+  title: string
+  durationMinutes: number | null
+  startedAt: string
+  softDeadline: string | null
+  questions: QuestionForStudent[]
+}
+
+export type AttemptStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED'
+
+export interface MyAttemptResponse {
+  status: AttemptStatus
+  startedAt: string | null
+  softDeadline: string | null
+  score: number | null
+  maxMarks: number
+}
+
+export interface AnswerResult {
+  questionId: string
+  questionText: string
+  selectedOption: string | null
+  correctOption: string
+  correct: boolean
+  marksAwarded: number
+  marksPossible: number
+}
+
+export interface SubmitResultResponse {
+  score: number
+  maxMarks: number
+  breakdown: AnswerResult[]
+}
+
+
+// --- Payment gateway (fee payments via Razorpay or the free mock provider) ---
+// Mirrors backend/.../modules/payment/dto/PaymentDtos.java exactly.
+
+export interface CreateOrderResponse {
+  // "mock": no real gateway configured - frontend shows its own "Simulate
+  // successful payment" button instead of opening Razorpay Checkout.
+  // "razorpay": real gateway - frontend loads checkout.js and opens it
+  // using keyId below.
+  provider: 'mock' | 'razorpay'
+  orderId: string
+  amountInPaise: number
+  currency: string
+  // Razorpay's PUBLIC key - safe to expose to the frontend. Null in mock
+  // mode, where it's never used.
+  keyId: string | null
+  feeId: string
+}
+
+export interface VerifyPaymentRequest {
+  feeId: string
+  orderId: string
+  paymentId: string
+  // Blank/omitted in mock mode - there's no real signature to check since
+  // no real money or real Razorpay order is involved.
+  signature?: string
+}
+
+
+// --- Class ranking (staff-only leaderboard) ---
+// Mirrors backend/.../modules/assessment/dto/RankingDtos.java exactly.
+// The staff-only counterpart to StudentRank above: same sum-of-marks
+// percentage and standard-competition-ranking math, but as a full named
+// leaderboard for a batch instead of one student's own anonymous standing.
+// Never call this from a PARENT/STUDENT account - use StudentRank instead.
+
+export interface BatchRankingEntry {
+  studentId: string
+  studentName: string
+  totalMarksObtained: number
+  totalMaxMarks: number
+  percentage: number | null
+  rank: number | null
+}
+
+export interface BatchRanking {
+  batchId: string
+  batchName: string
+  totalStudents: number
+  entries: BatchRankingEntry[]
 }

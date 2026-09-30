@@ -1,9 +1,11 @@
 package com.teacheros.modules.student;
 
+import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
 import com.teacheros.modules.user.User;
 import com.teacheros.modules.user.UserRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -76,5 +78,31 @@ public class StudentAccessGuard {
             case "OWNER", "TEACHER", "STAFF", "ADMIN" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * Resolves the Student record for the currently authenticated STUDENT
+     * account - used where a student acts on their OWN behalf (e.g.
+     * starting/submitting an online test), as opposed to assertCanView's
+     * "may I look at this other student's record" check. Deliberately
+     * rejects PARENT here even though a parent can view their child's
+     * data elsewhere - taking a test is not something a guardian account
+     * should be able to do for their child.
+     */
+    public UUID resolveCurrentStudentId() {
+        String role = currentTenantProvider.getCurrentRole();
+        if (!"STUDENT".equals(role)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "STUDENT_ONLY", "Only a student account can do this.");
+        }
+
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        User currentUser = userRepository.findById(currentTenantProvider.getCurrentUserId())
+                .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "STUDENT_ONLY",
+                        "Only a student account can do this."));
+
+        return studentRepository.findFirstByTenantIdAndPhoneNumberAndActiveTrue(tenantId, currentUser.getPhoneNumber())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND",
+                        "No student record is linked to this account."))
+                .getId();
     }
 }

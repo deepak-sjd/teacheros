@@ -2,6 +2,7 @@ package com.teacheros.modules.timetable;
 
 import com.teacheros.modules.timetable.dto.TimetableDtos.CreateSlotRequest;
 import com.teacheros.modules.timetable.dto.TimetableDtos.SlotResponse;
+import com.teacheros.modules.timetable.dto.TimetableDtos.UpdateMeetingLinkRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,5 +39,14 @@ public class TimetableController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         timetableService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // Separate from create/delete so a teacher can add, swap, or remove a
+    // Zoom/Meet link on an existing slot without recreating it.
+    @PatchMapping("/{id}/meeting-link")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<SlotResponse> updateMeetingLink(@PathVariable UUID id,
+            @Valid @RequestBody UpdateMeetingLinkRequest request) {
+        return ResponseEntity.ok(timetableService.updateMeetingLink(id, request));
     }
 }

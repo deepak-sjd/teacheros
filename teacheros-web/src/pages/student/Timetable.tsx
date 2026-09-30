@@ -2,9 +2,27 @@ import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
 import { EmptyState } from '@/components/ui'
 import { api } from '@/lib/api'
+import { isSlotLiveNow, MEETING_PLATFORM_LABELS } from '@/lib/format'
 import type { Student, TimetableSlot } from '@/lib/types'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function JoinButton({ slot }: { slot: TimetableSlot }) {
+  if (!slot.meetingLink) return null
+  const live = isSlotLiveNow(slot.dayOfWeek, slot.startTime, slot.endTime)
+  return (
+    <a
+      href={slot.meetingLink}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium transition-colors ${
+        live ? 'bg-success text-white hover:opacity-90' : 'bg-paper-dim text-slate hover:text-ink'
+      }`}
+    >
+      {live ? '● Join now' : `${MEETING_PLATFORM_LABELS[slot.meetingPlatform ?? 'OTHER']} link`}
+    </a>
+  )
+}
 
 function TimetableGrid({ student }: { student: Student }) {
   const [slots, setSlots] = useState<TimetableSlot[] | null>(null)
@@ -44,6 +62,7 @@ function TimetableGrid({ student }: { student: Student }) {
                         {slot.startTime.slice(0, 5)}–{slot.endTime.slice(0, 5)}
                       </div>
                       {slot.subject && <div className="text-slate">{slot.subject}</div>}
+                      <JoinButton slot={slot} />
                     </div>
                   ))
                 )}

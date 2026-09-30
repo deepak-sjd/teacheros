@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Ledger, Row, Select, StatBlock } from '@/components/ui'
 import { api, ApiError } from '@/lib/api'
-import type { Batch, Page, ReportSummary } from '@/lib/types'
+import type { Batch, BatchRanking, Page, ReportSummary } from '@/lib/types'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
 
 type Period = 'today' | 'week' | 'month' | 'custom'
@@ -41,6 +41,9 @@ export function ReportsPage() {
   const [report, setReport] = useState<ReportSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [ranking, setRanking] = useState<BatchRanking | null>(null)
+  const [rankingLoading, setRankingLoading] = useState(false)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => setBatches(res.content))
@@ -50,6 +53,22 @@ export function ReportsPage() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Class ranking is per-batch (a leaderboard needs one roster, not a mix
+  // of several), so it only loads once a specific batch is selected -
+  // "All batches" clears it rather than showing something misleading.
+  useEffect(() => {
+    if (!batchId) {
+      setRanking(null)
+      return
+    }
+    setRankingLoading(true)
+    api
+      .get<BatchRanking>(`/api/v1/tests/batches/${batchId}/ranking`)
+      .then(setRanking)
+      .catch(() => setRanking(null))
+      .finally(() => setRankingLoading(false))
+  }, [batchId])
 
   function handlePeriodChange(next: Period) {
     setPeriod(next)
@@ -70,6 +89,20 @@ export function ReportsPage() {
       .finally(() => setLoading(false))
   }
 
+  async function handleDownloadPdf() {
+    setDownloading(true)
+    try {
+      await api.downloadFile(
+        `/api/v1/reports/summary.pdf?from=${from}&to=${to}${batchId ? `&batchId=${batchId}` : ''}`,
+        `report-${from}-to-${to}.pdf`,
+      )
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not download the report.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <Layout>
       <PageHeader
@@ -77,8 +110,8 @@ export function ReportsPage() {
         description="Attendance, fees, and marks for a period."
         action={
           report && (
-            <Button variant="secondary" onClick={() => window.print()}>
-              Print / Save as PDF
+            <Button variant="secondary" onClick={handleDownloadPdf} disabled={downloading}>
+              {downloading ? 'Preparing PDF…' : 'Download PDF'}
             </Button>
           )
         }
@@ -210,6 +243,36 @@ export function ReportsPage() {
               </Ledger>
             )}
           </section>
+
+          {batchId && (
+            <section>
+              <h3 className="font-display text-xl text-ink mb-3">Class ranking</h3>
+              {rankingLoading ? (
+                <p className="text-slate text-sm">Loading…</p>
+              ) : !ranking || ranking.entries.length === 0 ? (
+                <EmptyState title="No students in this batch" />
+              ) : (
+                <>
+                  <p className="text-xs text-slate-light mb-3">
+                    Ranked by total marks scored across every graded test in this batch, all-time — not limited to
+                    the period selected above. {ranking.entries.filter((e) => e.rank !== null).length} of{' '}
+                    {ranking.totalStudents} student{ranking.totalStudents === 1 ? '' : 's'} have at least one graded
+                    test.
+                  </p>
+                  <Ledger columns={['Rank', 'Student', 'Score', 'Average %']}>
+                    {ranking.entries.map((e) => (
+                      <Row key={e.studentId}>
+                        <Cell className="font-medium">{e.rank ? `#${e.rank}` : '\u2014'}</Cell>
+                        <Cell>{e.studentName}</Cell>
+                        <Cell>{e.rank ? `${e.totalMarksObtained} / ${e.totalMaxMarks}` : '\u2014'}</Cell>
+                        <Cell>{e.percentage !== null ? `${e.percentage}%` : '\u2014'}</Cell>
+                      </Row>
+                    ))}
+                  </Ledger>
+                </>
+              )}
+            </section>
+          )}
         </div>
       )}
     </Layout>

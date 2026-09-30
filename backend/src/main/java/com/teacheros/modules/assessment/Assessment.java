@@ -48,6 +48,24 @@ public class Assessment {
     @Column(name = "created_by_user_id", nullable = false)
     private UUID createdByUserId;
 
+    // OFFLINE (default) keeps the original behaviour - teacher enters
+    // marks manually. ONLINE_MCQ additionally has TestQuestion rows and
+    // is taken by students in-app; see V11 migration comment for the
+    // full reasoning.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "test_type", nullable = false)
+    private TestType testType = TestType.OFFLINE;
+
+    // Advisory client-side countdown only for ONLINE_MCQ - see V11.
+    @Column(name = "duration_minutes")
+    private Integer durationMinutes;
+
+    @Column(name = "available_from")
+    private Instant availableFrom;
+
+    @Column(name = "available_until")
+    private Instant availableUntil;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
-import type { Assessment, Batch, MarkResponse, Page, Student } from '@/lib/types'
+import type { Assessment, Batch, MarkResponse, Page, QuestionInput, QuestionResponse, Student, TestType } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Textarea } from '@/components/ui'
 import { formatDate, todayIso } from '@/lib/format'
 
 export function TestsPage() {
@@ -12,6 +12,7 @@ export function TestsPage() {
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [grading, setGrading] = useState<Assessment | null>(null)
+  const [editingQuestions, setEditingQuestions] = useState<Assessment | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -42,6 +43,16 @@ export function TestsPage() {
 
   if (grading) {
     return <GradingScreen test={grading} onBack={() => setGrading(null)} />
+  }
+
+  if (editingQuestions) {
+    return (
+      <QuestionsEditor
+        test={editingQuestions}
+        onBack={() => setEditingQuestions(null)}
+        onSaved={() => load(batchId)}
+      />
+    )
   }
 
   return (
@@ -80,18 +91,34 @@ export function TestsPage() {
                 <div key={t.id} className="border border-line rounded-lg bg-white p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="font-medium text-ink">{t.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-ink">{t.title}</p>
+                        {t.testType === 'ONLINE_MCQ' && (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-paper-dim text-slate">
+                            Online (MCQ)
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate mt-1">
                         {t.subject ? `${t.subject} \u00b7 ` : ''}
                         Out of {t.maxMarks} {'\u00b7'} {formatDate(t.testDate)}
+                        {t.testType === 'ONLINE_MCQ' && t.durationMinutes ? ` \u00b7 ${t.durationMinutes} min` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-3 whitespace-nowrap">
+                      {t.testType === 'ONLINE_MCQ' && (
+                        <button
+                          onClick={() => setEditingQuestions(t)}
+                          className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                        >
+                          Questions
+                        </button>
+                      )}
                       <button
                         onClick={() => setGrading(t)}
                         className="text-sm text-slate hover:text-ink underline underline-offset-2"
                       >
-                        Grade
+                        {t.testType === 'ONLINE_MCQ' ? 'Results' : 'Grade'}
                       </button>
                       <button
                         onClick={() => handleDelete(t.id)}
@@ -136,6 +163,10 @@ function CreateTestModal({
   const [subject, setSubject] = useState('')
   const [maxMarks, setMaxMarks] = useState('100')
   const [testDate, setTestDate] = useState(todayIso())
+  const [testType, setTestType] = useState<TestType>('OFFLINE')
+  const [durationMinutes, setDurationMinutes] = useState('')
+  const [availableFrom, setAvailableFrom] = useState('')
+  const [availableUntil, setAvailableUntil] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -157,10 +188,18 @@ function CreateTestModal({
         subject: subject || undefined,
         maxMarks: parsedMax,
         testDate,
+        testType,
+        durationMinutes: testType === 'ONLINE_MCQ' && durationMinutes ? Number(durationMinutes) : undefined,
+        availableFrom: testType === 'ONLINE_MCQ' && availableFrom ? new Date(availableFrom).toISOString() : undefined,
+        availableUntil: testType === 'ONLINE_MCQ' && availableUntil ? new Date(availableUntil).toISOString() : undefined,
       })
       setTitle('')
       setSubject('')
       setMaxMarks('100')
+      setTestType('OFFLINE')
+      setDurationMinutes('')
+      setAvailableFrom('')
+      setAvailableUntil('')
       onCreated()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create this test.')
@@ -173,10 +212,14 @@ function CreateTestModal({
     <Modal open={open} onClose={onClose} title="New test">
       {error && <ErrorBanner message={error} />}
       <form onSubmit={handleSubmit} className="space-y-4">
+        <Select label="Type" value={testType} onChange={(e) => setTestType(e.target.value as TestType)}>
+          <option value="OFFLINE">Offline — I'll enter marks myself</option>
+          <option value="ONLINE_MCQ">Online (MCQ) — students take it in the app</option>
+        </Select>
         <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <Input label="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
         <Input
-          label="Max marks"
+          label={testType === 'ONLINE_MCQ' ? 'Max marks (placeholder — set by your questions)' : 'Max marks'}
           type="number"
           min="1"
           step="0.5"
@@ -185,6 +228,34 @@ function CreateTestModal({
           required
         />
         <Input label="Test date" type="date" value={testDate} onChange={(e) => setTestDate(e.target.value)} required />
+        {testType === 'ONLINE_MCQ' && (
+          <>
+            <Input
+              label="Time limit in minutes (optional)"
+              type="number"
+              min="1"
+              placeholder="No limit"
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(e.target.value)}
+            />
+            <Input
+              label="Opens at (optional)"
+              type="datetime-local"
+              value={availableFrom}
+              onChange={(e) => setAvailableFrom(e.target.value)}
+            />
+            <Input
+              label="Closes at (optional)"
+              type="datetime-local"
+              value={availableUntil}
+              onChange={(e) => setAvailableUntil(e.target.value)}
+            />
+            <p className="text-xs text-slate">
+              Add your questions right after creating the test — it won't show up for students until it has at
+              least one.
+            </p>
+          </>
+        )}
         <div className="flex gap-2 justify-end pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
@@ -287,6 +358,194 @@ function GradingScreen({ test, onBack }: { test: Assessment; onBack: () => void 
           <Button onClick={handleSubmit} disabled={saving}>
             {saving ? 'Saving…' : 'Save marks'}
           </Button>
+        </>
+      )}
+    </Layout>
+  )
+}
+
+const BLANK_QUESTION: QuestionInput = {
+  questionText: '',
+  optionA: '',
+  optionB: '',
+  optionC: '',
+  optionD: '',
+  correctOption: 'A',
+  marks: 1,
+}
+
+/**
+ * Full-replace question authoring - matches GradingScreen's "edit
+ * everything, save once" pattern rather than one API call per question.
+ * Saving recomputes the test's max marks server-side as the sum of these
+ * questions' marks.
+ */
+function QuestionsEditor({
+  test,
+  onBack,
+  onSaved,
+}: {
+  test: Assessment
+  onBack: () => void
+  onSaved: () => void
+}) {
+  const [questions, setQuestions] = useState<QuestionInput[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    api
+      .get<QuestionResponse[]>(`/api/v1/tests/${test.id}/questions`)
+      .then((res) =>
+        setQuestions(
+          res.length > 0
+            ? res
+                .sort((a, b) => a.position - b.position)
+                .map(({ questionText, optionA, optionB, optionC, optionD, correctOption, marks }) => ({
+                  questionText,
+                  optionA,
+                  optionB,
+                  optionC,
+                  optionD,
+                  correctOption,
+                  marks,
+                }))
+            : [{ ...BLANK_QUESTION }],
+        ),
+      )
+      .finally(() => setLoading(false))
+  }, [test.id])
+
+  function updateQuestion(index: number, patch: Partial<QuestionInput>) {
+    setQuestions((prev) => prev.map((q, i) => (i === index ? { ...q, ...patch } : q)))
+  }
+
+  function addQuestion() {
+    setQuestions((prev) => [...prev, { ...BLANK_QUESTION }])
+  }
+
+  function removeQuestion(index: number) {
+    setQuestions((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const totalMarks = questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0)
+
+  async function handleSave() {
+    setError(null)
+    for (const [i, q] of questions.entries()) {
+      if (!q.questionText.trim() || !q.optionA.trim() || !q.optionB.trim() || !q.optionC.trim() || !q.optionD.trim()) {
+        setError(`Question ${i + 1} is missing text or an option.`)
+        return
+      }
+      if (!Number(q.marks) || Number(q.marks) <= 0) {
+        setError(`Question ${i + 1} needs marks above 0.`)
+        return
+      }
+    }
+
+    setSaving(true)
+    try {
+      await api.put(`/api/v1/tests/${test.id}/questions`, { questions })
+      setSaved(true)
+      onSaved()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save these questions.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Layout>
+      <PageHeader
+        title={`Questions: ${test.title}`}
+        description={`${questions.length} question${questions.length === 1 ? '' : 's'} \u00b7 ${totalMarks} marks total`}
+        action={
+          <Button variant="secondary" onClick={onBack}>
+            Back to tests
+          </Button>
+        }
+      />
+
+      {error && <ErrorBanner message={error} />}
+      {saved && (
+        <div className="rounded-md bg-success-soft text-success text-sm px-4 py-3 mb-4 border border-success/20">
+          Saved. Max marks for this test is now {totalMarks}.
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-slate text-sm">Loading…</p>
+      ) : (
+        <>
+          <div className="space-y-4 mb-6">
+            {questions.map((q, i) => (
+              <div key={i} className="border border-line rounded-lg bg-white p-4 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <span className="text-xs font-medium text-slate mt-2 shrink-0">Q{i + 1}</span>
+                  {questions.length > 1 && (
+                    <button
+                      onClick={() => removeQuestion(i)}
+                      className="text-xs text-danger hover:opacity-80 underline underline-offset-2"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <Textarea
+                  label="Question"
+                  value={q.questionText}
+                  onChange={(e) => updateQuestion(i, { questionText: e.target.value })}
+                  rows={2}
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(['A', 'B', 'C', 'D'] as const).map((letter) => (
+                    <Input
+                      key={letter}
+                      label={`Option ${letter}`}
+                      value={q[`option${letter}` as 'optionA' | 'optionB' | 'optionC' | 'optionD']}
+                      onChange={(e) => updateQuestion(i, { [`option${letter}`]: e.target.value } as Partial<QuestionInput>)}
+                    />
+                  ))}
+                </div>
+                <div className="flex gap-3 items-end">
+                  <div className="w-32">
+                    <Select
+                      label="Correct answer"
+                      value={q.correctOption}
+                      onChange={(e) => updateQuestion(i, { correctOption: e.target.value as QuestionInput['correctOption'] })}
+                    >
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                    </Select>
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      label="Marks"
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={q.marks}
+                      onChange={(e) => updateQuestion(i, { marks: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={addQuestion}>
+              Add question
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save questions'}
+            </Button>
+          </div>
         </>
       )}
     </Layout>

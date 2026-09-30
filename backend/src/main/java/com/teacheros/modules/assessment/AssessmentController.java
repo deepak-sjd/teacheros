@@ -6,6 +6,8 @@ import com.teacheros.modules.assessment.dto.AssessmentDtos.UpdateAssessmentReque
 import com.teacheros.modules.assessment.dto.MarkDtos.MarkResponse;
 import com.teacheros.modules.assessment.dto.MarkDtos.StudentMarkHistoryEntry;
 import com.teacheros.modules.assessment.dto.MarkDtos.SubmitMarksRequest;
+import com.teacheros.modules.assessment.dto.RankingDtos.BatchRankingResponse;
+import com.teacheros.modules.assessment.dto.RankingDtos.StudentRankResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -80,5 +82,24 @@ public class AssessmentController {
     // GET /fees/students/{studentId} and the attendance summary endpoint.
     public ResponseEntity<List<StudentMarkHistoryEntry>> getStudentMarkHistory(@PathVariable UUID studentId) {
         return ResponseEntity.ok(assessmentService.getStudentMarkHistory(studentId));
+    }
+
+    @GetMapping("/batches/{batchId}/ranking")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    // Staff only, same reasoning as listMarksForTest - a full-name
+    // leaderboard is a staff privilege, not something batch membership
+    // alone should grant a parent/student. See getStudentRank below for
+    // the PARENT/STUDENT-safe equivalent.
+    public ResponseEntity<BatchRankingResponse> batchRanking(@PathVariable UUID batchId) {
+        return ResponseEntity.ok(assessmentService.getBatchRanking(batchId));
+    }
+
+    @GetMapping("/students/{studentId}/rank")
+    // Any role, but StudentAccessGuard inside the service enforces "only
+    // your own child/self" - same pattern as getStudentMarkHistory. Never
+    // exposes a classmate's name or score, only this student's own
+    // position and how many peers they're ranked against.
+    public ResponseEntity<StudentRankResponse> studentRank(@PathVariable UUID studentId) {
+        return ResponseEntity.ok(assessmentService.getStudentRank(studentId));
     }
 }

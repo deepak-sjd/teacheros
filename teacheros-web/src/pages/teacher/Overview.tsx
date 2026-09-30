@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
-import type { Batch, Fee, Page, Student } from '@/lib/types'
+import type { AttendanceTrendResponse, Batch, Fee, Page, Student, SubjectPerformanceResponse } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { StatBlock, Button, Ledger, Row, Cell, EmptyState } from '@/components/ui'
+import { BarChart, LineChart } from '@/components/Charts'
 import { formatCurrency } from '@/lib/format'
 
 export function Overview() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [students, setStudents] = useState<Page<Student> | null>(null)
   const [pendingFees, setPendingFees] = useState<Page<Fee> | null>(null)
+  const [attendanceTrend, setAttendanceTrend] = useState<AttendanceTrendResponse | null>(null)
+  const [subjectPerformance, setSubjectPerformance] = useState<SubjectPerformanceResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -17,11 +20,15 @@ export function Overview() {
       api.get<Page<Batch>>('/api/v1/batches', { size: 50 }),
       api.get<Page<Student>>('/api/v1/students', { size: 50 }),
       api.get<Page<Fee>>('/api/v1/fees/pending', { size: 10 }),
+      api.get<AttendanceTrendResponse>('/api/v1/analytics/attendance-trend', { days: 14 }),
+      api.get<SubjectPerformanceResponse>('/api/v1/analytics/subject-performance', { days: 30 }),
     ])
-      .then(([b, s, f]) => {
+      .then(([b, s, f, trend, subjects]) => {
         setBatches(b.content)
         setStudents(s)
         setPendingFees(f)
+        setAttendanceTrend(trend)
+        setSubjectPerformance(subjects)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -44,6 +51,40 @@ export function Overview() {
               value={formatCurrency(totalDue)}
               sub={`${pendingFees?.totalElements ?? 0} student${(pendingFees?.totalElements ?? 0) === 1 ? '' : 's'}`}
             />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+            <div className="border border-line rounded-lg bg-white p-5">
+              <h2 className="font-display text-lg text-ink mb-1">Attendance trend</h2>
+              <p className="text-xs text-slate-light mb-4">Last 14 days with a class held, across all batches.</p>
+              {!attendanceTrend || attendanceTrend.points.length === 0 ? (
+                <EmptyState title="No attendance recorded yet" description="Mark attendance to see the trend here." />
+              ) : (
+                <LineChart
+                  data={attendanceTrend.points.map((p) => ({
+                    label: new Date(p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+                    value: p.attendancePercentage,
+                  }))}
+                  formatValue={(v) => `${v}%`}
+                  yMax={100}
+                />
+              )}
+            </div>
+
+            <div className="border border-line rounded-lg bg-white p-5">
+              <h2 className="font-display text-lg text-ink mb-1">Performance by subject</h2>
+              <p className="text-xs text-slate-light mb-4">Average score across all tests in the last 30 days.</p>
+              {!subjectPerformance || subjectPerformance.points.length === 0 ? (
+                <EmptyState title="No tests graded yet" description="Grade a test to see subject averages here." />
+              ) : (
+                <BarChart
+                  data={subjectPerformance.points.map((p) => ({ label: p.subject, value: p.averagePercentage }))}
+                  maxValue={100}
+                  formatValue={(v) => `${v}%`}
+                  barColor="var(--color-chalk)"
+                />
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between mb-3">

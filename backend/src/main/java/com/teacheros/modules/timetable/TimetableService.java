@@ -7,6 +7,7 @@ import com.teacheros.modules.batch.BatchAccessGuard;
 import com.teacheros.modules.batch.BatchRepository;
 import com.teacheros.modules.timetable.dto.TimetableDtos.CreateSlotRequest;
 import com.teacheros.modules.timetable.dto.TimetableDtos.SlotResponse;
+import com.teacheros.modules.timetable.dto.TimetableDtos.UpdateMeetingLinkRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,7 +48,41 @@ public class TimetableService {
 
         TimetableSlot slot = new TimetableSlot(tenantId, request.batchId(), request.dayOfWeek(),
                 request.startTime(), request.endTime(), request.subject());
+        applyMeetingLink(slot, request.meetingLink(), request.meetingPlatform());
         return toResponse(timetableSlotRepository.save(slot));
+    }
+
+    /**
+     * Sets, replaces, or clears a slot's video-call link without touching
+     * its day/time/subject. A blank meetingLink clears both fields (a
+     * teacher moving a batch back to in-person only) rather than being
+     * rejected as invalid input.
+     */
+    @Transactional
+    public SlotResponse updateMeetingLink(UUID slotId, UpdateMeetingLinkRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        TimetableSlot slot = timetableSlotRepository.findByIdAndTenantId(slotId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("TimetableSlot", slotId));
+
+        applyMeetingLink(slot, request.meetingLink(), request.meetingPlatform());
+        return toResponse(timetableSlotRepository.save(slot));
+    }
+
+    private void applyMeetingLink(TimetableSlot slot, String meetingLink, MeetingPlatform meetingPlatform) {
+        if (meetingLink == null || meetingLink.isBlank()) {
+            slot.setMeetingLink(null);
+            slot.setMeetingPlatform(null);
+            return;
+        }
+
+        String trimmed = meetingLink.trim();
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_MEETING_LINK",
+                    "Meeting link must be a full URL starting with http:// or https://");
+        }
+
+        slot.setMeetingLink(trimmed);
+        slot.setMeetingPlatform(meetingPlatform != null ? meetingPlatform : MeetingPlatform.OTHER);
     }
 
     /**
@@ -91,6 +126,7 @@ public class TimetableService {
 
     private SlotResponse toResponse(TimetableSlot slot) {
         return new SlotResponse(slot.getId(), slot.getBatchId(), slot.getDayOfWeek(),
-                slot.getStartTime(), slot.getEndTime(), slot.getSubject());
+                slot.getStartTime(), slot.getEndTime(), slot.getSubject(),
+                slot.getMeetingLink(), slot.getMeetingPlatform());
     }
 }

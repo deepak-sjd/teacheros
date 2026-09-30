@@ -14,6 +14,12 @@ public interface AssessmentRepository extends JpaRepository<Assessment, UUID> {
 
     Page<Assessment> findByTenantIdAndBatchIdOrderByTestDateDesc(UUID tenantId, UUID batchId, Pageable pageable);
 
+    // Used by the student "take a test" list, which only ever wants the
+    // ONLINE_MCQ ones for its batch - filtering server-side rather than
+    // having the client fetch everything and discard offline tests.
+    Page<Assessment> findByTenantIdAndBatchIdAndTestTypeOrderByTestDateDesc(
+            UUID tenantId, UUID batchId, TestType testType, Pageable pageable);
+
     // Used by ReportService - "tests conducted" per batch within a date
     // range, one count per batch rather than a single tenant-wide number,
     // since a report can be scoped to a single batch.

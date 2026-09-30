@@ -34,6 +34,16 @@ public class FeePayment {
 
     private String method;
 
+    // Set only for online payments (method="razorpay") - null for
+    // staff-recorded cash/manual entries. gatewayPaymentId has a unique
+    // index so PaymentService can detect Razorpay retrying its callback
+    // and avoid double-recording the same payment.
+    @Column(name = "gateway_order_id")
+    private String gatewayOrderId;
+
+    @Column(name = "gateway_payment_id")
+    private String gatewayPaymentId;
+
     @PrePersist
     void onCreate() {
         if (this.paidAt == null) {

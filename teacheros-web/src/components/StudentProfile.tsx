@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import type {
   AppNotification,
   AttendanceSummaryResponse,
@@ -9,10 +9,11 @@ import type {
   Page,
   Student,
   StudentMarkHistoryEntry,
+  StudentRank,
   StudyMaterial,
   TimetableSlot,
 } from '@/lib/types'
-import { StatBlock, Ledger, Row, Cell, StatusPill, EmptyState } from '@/components/ui'
+import { Button, StatBlock, Ledger, Row, Cell, StatusPill, EmptyState, ErrorBanner } from '@/components/ui'
 import { MessageThread } from '@/components/MessageThread'
 import { formatCurrency, formatDate } from '@/lib/format'
 
@@ -32,9 +33,12 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
   const [materials, setMaterials] = useState<StudyMaterial[]>([])
   const [slots, setSlots] = useState<TimetableSlot[]>([])
   const [marks, setMarks] = useState<StudentMarkHistoryEntry[]>([])
+  const [rank, setRank] = useState<StudentRank | null>(null)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloadingReportCard, setDownloadingReportCard] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -61,9 +65,10 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
             : Promise.resolve<TimetableSlot[]>([]),
           api.get<AppNotification[]>(`/api/v1/notifications/students/${studentId}`),
           api.get<StudentMarkHistoryEntry[]>(`/api/v1/tests/students/${studentId}/marks`),
+          api.get<StudentRank>(`/api/v1/tests/students/${studentId}/rank`),
         ])
       })
-      .then(([summ, f, hw, mat, tt, notifs, mk]) => {
+      .then(([summ, f, hw, mat, tt, notifs, mk, rk]) => {
         setSummary(summ)
         setFees(f)
         setHomework(hw.content)
@@ -71,6 +76,7 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
         setSlots(tt)
         setNotifications(notifs)
         setMarks(mk)
+        setRank(rk)
       })
       .catch(() => setError('Could not find that student. Double-check the ID and try again.'))
       .finally(() => setLoading(false))
@@ -87,6 +93,22 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
     window.open(url, '_blank')
   }
 
+  async function handleDownloadReportCard() {
+    if (!student) return
+    setDownloadingReportCard(true)
+    setDownloadError(null)
+    try {
+      await api.downloadFile(
+        `/api/v1/reports/students/${studentId}/report-card.pdf`,
+        `${student.fullName.replace(/\s+/g, '-')}-report-card.pdf`,
+      )
+    } catch (err) {
+      setDownloadError(err instanceof ApiError ? err.message : 'Could not download the report card.')
+    } finally {
+      setDownloadingReportCard(false)
+    }
+  }
+
   if (loading) return <p className="text-slate text-sm">Loading…</p>
   if (error) return <EmptyState title="Not found" description={error} />
 
@@ -95,19 +117,31 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
   return (
     <div>
       {showStudentHeader && student && (
-        <div className="mb-6">
-          <h2 className="font-display text-2xl text-ink">{student.fullName}</h2>
-          <p className="text-slate text-sm mt-0.5">
-            {student.grade ? `Grade ${student.grade} \u00b7 ` : ''}Guardian: {student.guardianPhone}
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-6">
+          <div>
+            <h2 className="font-display text-2xl text-ink">{student.fullName}</h2>
+            <p className="text-slate text-sm mt-0.5">
+              {student.grade ? `Grade ${student.grade} \u00b7 ` : ''}Guardian: {student.guardianPhone}
+            </p>
+          </div>
+          <Button variant="secondary" onClick={handleDownloadReportCard} disabled={downloadingReportCard} className="shrink-0">
+            {downloadingReportCard ? 'Preparing…' : 'Download report card (PDF)'}
+          </Button>
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      {downloadError && <ErrorBanner message={downloadError} />}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatBlock
           label="Attendance"
           value={summary ? `${summary.attendancePercentage.toFixed(0)}%` : '\u2014'}
           sub={summary ? `${summary.sessionsAttended} of ${summary.sessionsRecorded} sessions` : undefined}
+        />
+        <StatBlock
+          label="Class rank"
+          value={rank?.rank ? `#${rank.rank}` : '\u2014'}
+          sub={rank?.rank ? `of ${rank.totalStudents} ranked` : 'Not enough graded tests yet'}
         />
         <StatBlock label="Outstanding balance" value={formatCurrency(totalDue)} />
         <StatBlock label="Fee records" value={String(fees.length)} />
