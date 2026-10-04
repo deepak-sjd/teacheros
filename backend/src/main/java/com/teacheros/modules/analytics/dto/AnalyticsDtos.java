@@ -32,4 +32,18 @@ public class AnalyticsDtos {
             UUID batchId,
             List<SubjectPerformancePoint> points) {
     }
+
+    public record FeeCollectionPoint(
+            LocalDate date,
+            java.math.BigDecimal amountCollected) {
+    }
+
+    // No batchId field, unlike the other two trends - Fee has no batchId in
+    // the schema (see ReportDtos.FeeReportSummary's javadoc), so this is
+    // always tenant-wide.
+    public record FeeCollectionTrendResponse(
+            LocalDate from,
+            LocalDate to,
+            List<FeeCollectionPoint> points) {
+    }
 }

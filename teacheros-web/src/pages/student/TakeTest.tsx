@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+// Import line, add useSearchParams:
+import { useSearchParams } from 'react-router-dom'   // ← new
 import { StudentSectionShell } from '@/components/StudentSectionShell'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner } from '@/components/ui'
@@ -25,6 +27,9 @@ function formatRemaining(seconds: number) {
 }
 
 function OnlineTestList({ student }: { student: Student }) {
+  const [searchParams] = useSearchParams()                    // ← new
+  const preselectedTestId = searchParams.get('testId')         // ← new
+  const autoSelectedRef = useRef(false)                        // ← new
   const [items, setItems] = useState<TestWithStatus[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState<Assessment | null>(null)
@@ -45,6 +50,15 @@ function OnlineTestList({ student }: { student: Student }) {
           })),
         )
         setItems(withStatus)
+        // ↓ new block
+        if (preselectedTestId && !autoSelectedRef.current) {
+          const match = withStatus.find((it) => it.test.id === preselectedTestId && it.status.status !== 'SUBMITTED')
+          if (match) {
+            autoSelectedRef.current = true
+            setActive(match.test)
+          }
+        }
+        // ↑ new block
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load tests.'))
   }
@@ -236,3 +250,4 @@ export function StudentTakeTest() {
     </StudentSectionShell>
   )
 }
+

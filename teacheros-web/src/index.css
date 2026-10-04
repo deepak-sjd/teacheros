@@ -35,3 +35,85 @@ body {
 * {
   outline-color: var(--color-chalk);
 }
+
+/* Shared motion primitives - used by components/ui.tsx (modal, skeletons),
+   components/Layout.tsx (route transitions, mobile menu), and
+   pages/Landing.tsx (scroll-reveal). Kept in one place so the app has one
+   consistent animation "feel" instead of every component inventing its
+   own timing. All durations intentionally short (150-220ms) - this is a
+   data-entry app, not a showcase site; motion should confirm an action
+   happened, not make the person wait for it.
+
+   Respects prefers-reduced-motion globally, once, here - individual
+   components don't need their own media query. */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-out-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+.animate-fade-in { animation: fade-in 180ms ease-out both; }
+.animate-fade-out { animation: fade-out 150ms ease-in both; }
+.animate-scale-in { animation: scale-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-scale-out { animation: scale-out 150ms ease-in both; }
+.animate-slide-up { animation: slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-slide-in-left { animation: slide-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-slide-out-left { animation: slide-out-left 180ms ease-in both; }
+
+/* Scroll-reveal for the landing page: starts hidden, Landing.tsx's
+   useReveal hook adds .is-visible via IntersectionObserver once a
+   section enters the viewport. Plain CSS + one small hook - no animation
+   library. */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+}
+.reveal.is-visible {
+  animation: reveal-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-fade-out, .animate-scale-in, .animate-scale-out,
+  .animate-slide-up, .animate-slide-in-left, .animate-slide-out-left, .reveal.is-visible {
+    animation: none !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -16,6 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Free, self-hosted AI tutor answers via Ollama (https://ollama.com)
@@ -26,7 +27,7 @@ import java.util.List;
  * Requires Ollama running somewhere reachable from this app (defaults to
  * localhost, matching a same-host or same-docker-network deployment) with
  * the configured model already pulled, e.g.:
- *   ollama pull llama3.2
+ * ollama pull llama3.2
  * A CPU-only server runs a small model (3B-ish) at usable-but-not-instant
  * speed; a GPU is faster but not required to get this working.
  */
@@ -96,6 +97,36 @@ public class OllamaAiTutorClient implements AiTutorClient {
         }
     }
 
+    @Override
+    public String studyPlan(String studentGrade, List<SubjectWeakness> weakSubjects) {
+        try {
+            String requestBody = buildStudyPlanRequestBody(studentGrade, weakSubjects);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + "/api/chat"))
+                    .timeout(Duration.ofSeconds(timeoutSeconds))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("Ollama returned status {}: {}", response.statusCode(), response.body());
+                throw new AiTutorException("Ollama returned status " + response.statusCode(), null);
+            }
+
+            return extractText(response.body());
+        } catch (AiTutorException e) {
+            throw e;
+        } catch (java.net.ConnectException e) {
+            throw new AiTutorException(
+                    "Could not reach Ollama at " + baseUrl + " - is it running and reachable?", e);
+        } catch (Exception e) {
+            throw new AiTutorException("Failed to get a study plan from Ollama", e);
+        }
+    }
+
     private String buildRequestBody(String studentGrade, List<Turn> recentHistory, String question) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", model);
@@ -120,6 +151,52 @@ public class OllamaAiTutorClient implements AiTutorClient {
         } catch (Exception e) {
             throw new AiTutorException("Failed to build Ollama request", e);
         }
+    }
+
+    private String buildStudyPlanRequestBody(String studentGrade, List<SubjectWeakness> weakSubjects) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("model", model);
+        root.put("stream", false);
+
+        ArrayNode messages = root.putArray("messages");
+        ObjectNode system = messages.addObject();
+        system.put("role", "system");
+        system.put("content", studyPlanSystemPrompt(studentGrade));
+
+        ObjectNode userMessage = messages.addObject();
+        userMessage.put("role", "user");
+        userMessage.put("content", AiTutorClient.formatWeakSubjects(weakSubjects));
+
+        try {
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new AiTutorException("Failed to build Ollama request", e);
+        }
+    }
+
+    // Independently tunable from the doubt-answering systemPrompt() below -
+    // see AiTutorClient#formatWeakSubjects's javadoc for why the data
+    // formatting IS shared while this persona/tone text is not.
+    private String studyPlanSystemPrompt(String studentGrade) {
+        String gradeContext = (studentGrade == null || studentGrade.isBlank())
+                ? "a school or coaching-centre student"
+                : "a grade/class " + studentGrade + " student";
+        return """
+                You are a friendly, encouraging study coach for %s in India, used inside a school/coaching \
+                management app. You've been given a list of subjects where this student is currently \
+                scoring lower than their other subjects, based on their graded test marks.
+
+                Guidelines:
+                - Write a short, encouraging, actionable study plan (roughly 150-250 words) that helps the \
+                student improve specifically in these subjects.
+                - Suggest concrete next steps - what to revise, how to practice, how to split time across \
+                the subjects - rather than generic advice like "study harder".
+                - Keep the tone positive and motivating, not discouraging - a low score is a starting \
+                point to improve from, not a verdict.
+                - Format as short paragraphs or a short bulleted list, readable on a phone screen.
+                - Base the plan only on the subjects and scores given - do not invent subjects or scores \
+                that weren't provided.
+                """.formatted(gradeContext);
     }
 
     // Same tutoring guardrails as AnthropicAiTutorClient - see that class's

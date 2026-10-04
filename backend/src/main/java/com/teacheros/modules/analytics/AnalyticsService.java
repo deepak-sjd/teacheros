@@ -12,10 +12,15 @@ import com.teacheros.modules.attendance.AttendanceRepository;
 import com.teacheros.modules.attendance.AttendanceRepository.AttendanceRecordRow;
 import com.teacheros.modules.attendance.AttendanceStatus;
 import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.fee.FeePaymentRepository;
+import com.teacheros.modules.fee.FeePaymentRepository.PaymentRow;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -35,20 +40,56 @@ import java.util.UUID;
 @Service
 public class AnalyticsService {
 
+    private static final ZoneId APP_ZONE = ZoneId.of("Asia/Kolkata");
+
     private final CurrentTenantProvider currentTenantProvider;
     private final AttendanceRepository attendanceRepository;
     private final MarkRepository markRepository;
     private final BatchRepository batchRepository;
+    private final FeePaymentRepository feePaymentRepository;
 
     public AnalyticsService(
             CurrentTenantProvider currentTenantProvider,
             AttendanceRepository attendanceRepository,
             MarkRepository markRepository,
-            BatchRepository batchRepository) {
+            BatchRepository batchRepository,
+            FeePaymentRepository feePaymentRepository) {
         this.currentTenantProvider = currentTenantProvider;
         this.attendanceRepository = attendanceRepository;
         this.markRepository = markRepository;
         this.batchRepository = batchRepository;
+        this.feePaymentRepository = feePaymentRepository;
+    }
+
+    /**
+     * Day-by-day amount collected, tenant-wide (fees have no batchId - see
+     * the DTO's javadoc). Days with zero payments are omitted, same
+     * "don't plot a day as 0 unless it genuinely happened" reasoning as
+     * attendanceTrend, though here a zero-collection day is a lot more
+     * normal than a zero-attendance day so this mainly just keeps the
+     * response small.
+     */
+    public com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionTrendResponse feeCollectionTrend(int days) {
+        LocalDate to = LocalDate.now(APP_ZONE);
+        LocalDate from = to.minusDays(Math.max(days, 1) - 1L);
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+
+        Instant fromInstant = from.atStartOfDay(APP_ZONE).toInstant();
+        Instant toInstant = to.plusDays(1).atStartOfDay(APP_ZONE).toInstant();
+        List<PaymentRow> rows = feePaymentRepository.findPaymentsInRange(tenantId, fromInstant, toInstant);
+
+        Map<LocalDate, BigDecimal> byDate = new TreeMap<>();
+        for (PaymentRow row : rows) {
+            LocalDate day = row.getPaidAt().atZone(APP_ZONE).toLocalDate();
+            byDate.merge(day, row.getAmountPaid(), BigDecimal::add);
+        }
+
+        List<com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionPoint> points = byDate.entrySet().stream()
+                .map(e -> new com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionPoint(e.getKey(),
+                        e.getValue()))
+                .toList();
+
+        return new com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionTrendResponse(from, to, points);
     }
 
     /**

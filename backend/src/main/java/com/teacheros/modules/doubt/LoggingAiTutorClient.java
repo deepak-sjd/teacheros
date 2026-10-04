@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Dev default - logs the question instead of calling a real AI provider,
@@ -25,5 +26,15 @@ public class LoggingAiTutorClient implements AiTutorClient {
         return "This is a placeholder answer from the dev AI provider (app.ai.provider=log). "
                 + "Your question was: \"" + question + "\". "
                 + "Set app.ai.provider=anthropic and ANTHROPIC_API_KEY to get real answers.";
+    }
+
+    @Override
+    public String studyPlan(String studentGrade, List<SubjectWeakness> weakSubjects) {
+        String subjects = weakSubjects.stream().map(SubjectWeakness::subject).collect(Collectors.joining(", "));
+        log.info("[DEV AI TUTOR] studyPlan grade={} weakSubjects=[{}] (no real AI call made - dev provider)",
+                studentGrade, subjects);
+        return "This is a placeholder study plan from the dev AI provider (app.ai.provider=log).\n\n"
+                + "Weak subjects detected:\n" + AiTutorClient.formatWeakSubjects(weakSubjects) + "\n\n"
+                + "Set app.ai.provider=anthropic and ANTHROPIC_API_KEY to get a real personalized plan.";
     }
 }

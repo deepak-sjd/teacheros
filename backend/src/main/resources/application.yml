@@ -99,6 +99,11 @@ app:
     # against runaway load on whichever provider is configured, not a
     # product-facing quota.
     daily-question-limit: ${AI_DAILY_QUESTION_LIMIT:30}
+    # A subject whose average graded-marks percentage falls below this is
+    # flagged "weak" by StudyPlanService - 60 is a reasonable generic
+    # pass/fail-adjacent line, override per-deployment if a tenant wants
+    # stricter/looser.
+    weak-subject-threshold: ${AI_WEAK_SUBJECT_THRESHOLD:60}
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       model: ${OLLAMA_MODEL:llama3.2}

@@ -64,6 +64,32 @@ public class StorageService {
     }
 
     /**
+     * For tenant-level assets with no batch to namespace under - currently
+     * just the branding logo (see TenantService). Separate from upload()
+     * rather than passing a fake/null batchId through it, since that method's
+     * key format is specifically "tenants/{t}/batches/{b}/..." and a logo
+     * isn't batch-scoped at all.
+     */
+    public String uploadTenantAsset(UUID tenantId, MultipartFile file) {
+        String key = "tenants/%s/branding/%s-%s".formatted(
+                tenantId, UUID.randomUUID(), sanitizeFilename(file.getOriginalFilename()));
+
+        try {
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .contentType(file.getContentType())
+                            .build(),
+                    RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read uploaded file", e);
+        }
+
+        return key;
+    }
+
+    /**
      * A short-lived, signed GET URL - never a permanent public link. Default
      * expiry is intentionally short; the client is expected to fetch a
      * fresh one each time it wants to download, not cache it long-term.

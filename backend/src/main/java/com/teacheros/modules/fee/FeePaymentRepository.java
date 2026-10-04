@@ -23,4 +23,26 @@ public interface FeePaymentRepository extends JpaRepository<FeePayment, UUID> {
             """)
     BigDecimal sumCollectedBetween(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
             @Param("to") Instant to);
+
+    /**
+     * Every payment in range, ungrouped - AnalyticsService buckets these
+     * by calendar day (Asia/Kolkata, matching the rest of the app - see
+     * DoubtService) to build the fee-collection trend chart. Unlike
+     * attendance/marks, fees have no batchId in the schema (see
+     * ReportDtos.FeeReportSummary's javadoc), so this is tenant-wide only -
+     * there's no batch param to narrow it by.
+     */
+    @Query("""
+            SELECT p.paidAt AS paidAt, p.amountPaid AS amountPaid
+            FROM FeePayment p
+            WHERE p.tenantId = :tenantId AND p.paidAt >= :from AND p.paidAt < :to
+            """)
+    List<PaymentRow> findPaymentsInRange(@Param("tenantId") UUID tenantId, @Param("from") Instant from,
+            @Param("to") Instant to);
+
+    interface PaymentRow {
+        Instant getPaidAt();
+
+        BigDecimal getAmountPaid();
+    }
 }

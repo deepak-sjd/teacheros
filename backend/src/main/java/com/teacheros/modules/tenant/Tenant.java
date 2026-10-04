@@ -22,6 +22,12 @@ public class Tenant {
     @Column(nullable = false)
     private String name;
 
+    // S3 object key, not a URL - same pattern as StudyMaterial.objectKey
+    // (see StorageService's javadoc). A display URL is signed on demand by
+    // TenantService, never stored.
+    @Column(name = "logo_object_key")
+    private String logoObjectKey;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

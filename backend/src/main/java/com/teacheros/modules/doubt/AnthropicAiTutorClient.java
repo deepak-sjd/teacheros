@@ -94,6 +94,35 @@ public class AnthropicAiTutorClient implements AiTutorClient {
         }
     }
 
+    @Override
+    public String studyPlan(String studentGrade, List<SubjectWeakness> weakSubjects) {
+        try {
+            String requestBody = buildStudyPlanRequestBody(studentGrade, weakSubjects);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(API_URL))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json")
+                    .header("x-api-key", apiKey)
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("Anthropic API returned status {}: {}", response.statusCode(), response.body());
+                throw new AiTutorException("Anthropic API returned status " + response.statusCode(), null);
+            }
+
+            return extractText(response.body());
+        } catch (AiTutorException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AiTutorException("Failed to get a study plan from the AI tutor", e);
+        }
+    }
+
     private String buildRequestBody(String studentGrade, List<Turn> recentHistory, String question) {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("model", model);
@@ -115,6 +144,49 @@ public class AnthropicAiTutorClient implements AiTutorClient {
         } catch (Exception e) {
             throw new AiTutorException("Failed to build AI tutor request", e);
         }
+    }
+
+    private String buildStudyPlanRequestBody(String studentGrade, List<SubjectWeakness> weakSubjects) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("model", model);
+        root.put("max_tokens", maxTokens);
+        root.put("system", studyPlanSystemPrompt(studentGrade));
+
+        ArrayNode messages = root.putArray("messages");
+        ObjectNode userMessage = messages.addObject();
+        userMessage.put("role", "user");
+        userMessage.put("content", AiTutorClient.formatWeakSubjects(weakSubjects));
+
+        try {
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new AiTutorException("Failed to build AI tutor request", e);
+        }
+    }
+
+    // Independently tunable from the doubt-answering systemPrompt() below -
+    // see AiTutorClient#formatWeakSubjects's javadoc for why the data
+    // formatting IS shared while this persona/tone text is not.
+    private String studyPlanSystemPrompt(String studentGrade) {
+        String gradeContext = (studentGrade == null || studentGrade.isBlank())
+                ? "a school or coaching-centre student"
+                : "a grade/class " + studentGrade + " student";
+        return """
+                You are a friendly, encouraging study coach for %s in India, used inside a school/coaching \
+                management app. You've been given a list of subjects where this student is currently \
+                scoring lower than their other subjects, based on their graded test marks.
+
+                Guidelines:
+                - Write a short, encouraging, actionable study plan (roughly 150-250 words) that helps the \
+                student improve specifically in these subjects.
+                - Suggest concrete next steps - what to revise, how to practice, how to split time across \
+                the subjects - rather than generic advice like "study harder".
+                - Keep the tone positive and motivating, not discouraging - a low score is a starting \
+                point to improve from, not a verdict.
+                - Format as short paragraphs or a short bulleted list, readable on a phone screen.
+                - Base the plan only on the subjects and scores given - do not invent subjects or scores \
+                that weren't provided.
+                """.formatted(gradeContext);
     }
 
     /**

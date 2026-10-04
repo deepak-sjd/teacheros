@@ -56,8 +56,10 @@ public class AssessmentController {
 
     @GetMapping
     public ResponseEntity<Page<AssessmentResponse>> listForBatch(
-            @RequestParam UUID batchId, Pageable pageable) {
-        return ResponseEntity.ok(assessmentService.listForBatch(batchId, pageable));
+            @RequestParam UUID batchId,
+            @RequestParam(required = false) TestType testType,
+            Pageable pageable) {
+        return ResponseEntity.ok(assessmentService.listForBatch(batchId, testType, pageable));
     }
 
     @PostMapping("/{id}/marks")

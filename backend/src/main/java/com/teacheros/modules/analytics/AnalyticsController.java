@@ -1,6 +1,7 @@
 package com.teacheros.modules.analytics;
 
 import com.teacheros.modules.analytics.dto.AnalyticsDtos.AttendanceTrendResponse;
+import com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionTrendResponse;
 import com.teacheros.modules.analytics.dto.AnalyticsDtos.SubjectPerformanceResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,5 +42,13 @@ public class AnalyticsController {
             @RequestParam(defaultValue = "30") int days,
             @RequestParam(required = false) UUID batchId) {
         return ResponseEntity.ok(analyticsService.subjectPerformance(days, batchId));
+    }
+
+    // No batchId param, unlike the other two - fees have no batchId in the
+    // schema, so this is always tenant-wide (see the DTO's javadoc).
+    @GetMapping("/fee-collection-trend")
+    public ResponseEntity<FeeCollectionTrendResponse> feeCollectionTrend(
+            @RequestParam(defaultValue = "14") int days) {
+        return ResponseEntity.ok(analyticsService.feeCollectionTrend(days));
     }
 }

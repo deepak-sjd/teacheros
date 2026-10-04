@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
 import { StatBlock, EmptyState } from '@/components/ui'
+import { StudyPlanCard } from '@/components/StudyPlanCard'
 import { api } from '@/lib/api'
 import { BarChart } from '@/components/Charts'
 import { formatCurrency, formatDate, isSlotLiveNow, MEETING_PLATFORM_LABELS, todayIso } from '@/lib/format'
@@ -13,6 +14,7 @@ import type {
   Student,
   StudentMarkHistoryEntry,
   StudentRank,
+  StudyPlanResponse,
   TimetableSlot,
 } from '@/lib/types'
 
@@ -34,6 +36,7 @@ function OverviewPanel({ student }: { student: Student }) {
   const [slots, setSlots] = useState<TimetableSlot[]>([])
   const [marks, setMarks] = useState<StudentMarkHistoryEntry[]>([])
   const [rank, setRank] = useState<StudentRank | null>(null)
+  const [studyPlan, setStudyPlan] = useState<StudyPlanResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -53,8 +56,13 @@ function OverviewPanel({ student }: { student: Student }) {
         : Promise.resolve<TimetableSlot[]>([]),
       api.get<StudentMarkHistoryEntry[]>(`/api/v1/tests/students/${student.id}/marks`),
       api.get<StudentRank>(`/api/v1/tests/students/${student.id}/rank`),
+      // Never calls the AI provider - just the cheap, always-fresh subject
+      // breakdown plus whatever plan text (if any) was last generated. See
+      // StudyPlanCard's own comment for why regenerating is a separate,
+      // explicit action rather than happening here.
+      api.get<StudyPlanResponse>(`/api/v1/study-plan/students/${student.id}`),
     ])
-      .then(([summ, f, notifs, hw, tt, m, r]) => {
+      .then(([summ, f, notifs, hw, tt, m, r, sp]) => {
         setSummary(summ)
         setFees(f)
         setNotifications(notifs)
@@ -62,6 +70,7 @@ function OverviewPanel({ student }: { student: Student }) {
         setSlots(tt)
         setMarks(m)
         setRank(r)
+        setStudyPlan(sp)
       })
       .finally(() => setLoading(false))
   }, [student.id, student.batchId])
@@ -195,6 +204,8 @@ function OverviewPanel({ student }: { student: Student }) {
           />
         </div>
       )}
+
+      {studyPlan && <StudyPlanCard studentId={student.id} initial={studyPlan} />}
 
       <h3 className="font-display text-xl text-ink mb-3">Recent alerts</h3>
       {notifications.length === 0 ? (

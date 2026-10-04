@@ -28,6 +28,11 @@ public class User {
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
+    // Contact info only - login stays phone+OTP exclusively, this is never
+    // used to authenticate. Nullable since nothing in the signup/OTP flow
+    // collects it today; a user fills it in later via Settings if they want.
+    private String email;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

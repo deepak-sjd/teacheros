@@ -114,11 +114,20 @@ public class AssessmentService {
         return toResponse(assessment);
     }
 
-    public Page<AssessmentResponse> listForBatch(UUID batchId, Pageable pageable) {
+    /**
+     * testType is optional - null means every test type (teacher's test
+     * list), ONLINE_MCQ narrows to what the student "take a test" screen
+     * wants (see AssessmentRepository's javadoc on the dedicated query
+     * method this was written for but, until now, never called).
+     */
+    public Page<AssessmentResponse> listForBatch(UUID batchId, TestType testType, Pageable pageable) {
         batchAccessGuard.assertCanView(batchId);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
-        return assessmentRepository.findByTenantIdAndBatchIdOrderByTestDateDesc(tenantId, batchId, pageable)
-                .map(this::toResponse);
+        Page<Assessment> page = testType != null
+                ? assessmentRepository.findByTenantIdAndBatchIdAndTestTypeOrderByTestDateDesc(tenantId, batchId,
+                        testType, pageable)
+                : assessmentRepository.findByTenantIdAndBatchIdOrderByTestDateDesc(tenantId, batchId, pageable);
+        return page.map(this::toResponse);
     }
 
     /**

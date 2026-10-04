@@ -85,6 +85,25 @@ public interface MarkRepository extends JpaRepository<Mark, UUID> {
     List<SubjectScoreRow> findSubjectScoresInRange(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
             @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    /**
+     * Every graded score for ONE student, all-time, with both possible
+     * subject labels - same shape and resolution as findSubjectScoresInRange
+     * above (reuses the SubjectScoreRow projection), just scoped by
+     * studentId instead of batchId/date-range. Used by StudyPlanService to
+     * group one student's own marks by subject, rather than aggregating
+     * across a whole batch the way AnalyticsService#subjectPerformance does.
+     */
+    @Query("""
+            SELECT a.subject AS assessmentSubject, b.subject AS batchSubject,
+                   m.marksObtained AS marksObtained, a.maxMarks AS maxMarks
+            FROM Mark m
+            JOIN Assessment a ON a.id = m.testId
+            JOIN Batch b ON b.id = a.batchId
+            WHERE m.tenantId = :tenantId AND m.studentId = :studentId AND m.marksObtained IS NOT NULL
+            """)
+    List<SubjectScoreRow> findSubjectScoresForStudent(
+            @Param("tenantId") UUID tenantId, @Param("studentId") UUID studentId);
+
     interface MarkScore {
         BigDecimal getMarksObtained();
 

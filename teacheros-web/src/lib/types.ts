@@ -346,6 +346,22 @@ export interface SubjectPerformanceResponse {
   points: SubjectPerformancePoint[]
 }
 
+
+export interface FeeCollectionPoint {
+  date: string
+  amountCollected: number
+}
+
+// No batchId, unlike the other two trends - fees have no batchId in the
+// schema (see FeeReportSummary's comment above), so this is always
+// tenant-wide.
+export interface FeeCollectionTrendResponse {
+  from: string
+  to: string
+  points: FeeCollectionPoint[]
+}
+
+
 // --- AI doubt solving ---
 
 export type DoubtSender = 'STUDENT' | 'AI'
@@ -486,4 +502,53 @@ export interface BatchRanking {
   batchName: string
   totalStudents: number
   entries: BatchRankingEntry[]
+}
+
+// --- Weak Topic Detection + Study Plan ---
+// Mirrors backend/.../modules/studyplan/dto/StudyPlanDtos.java exactly.
+
+export interface SubjectBreakdown {
+  subject: string
+  averagePercentage: number
+  gradedEntries: number
+  weak: boolean
+}
+
+export interface StudyPlanResponse {
+  subjects: SubjectBreakdown[]
+  planText: string | null
+  generatedAt: string | null
+}
+
+// --- Settings: my profile + tenant (school) settings ---
+// Mirrors backend/.../modules/user/dto/UserDtos.java and
+// modules/tenant/dto/TenantDtos.java exactly.
+
+export interface MyProfileResponse {
+  id: string
+  phoneNumber: string
+  displayName: string
+  email: string | null
+  role: Role
+  tenantName: string | null
+}
+
+// phoneNumber is deliberately not here - it's the login identity (OTP
+// target), not an editable contact field. See UserDtos.UpdateProfileRequest's
+// javadoc for why changing it isn't a plain profile edit.
+export interface UpdateProfileRequest {
+  displayName: string
+  email?: string
+}
+
+export interface TenantSettingsResponse {
+  id: string
+  name: string
+  // Short-lived signed URL, same pattern as DownloadUrlResponse above -
+  // null when no logo has been uploaded yet.
+  logoUrl: string | null
+}
+
+export interface UpdateTenantRequest {
+  name: string
 }

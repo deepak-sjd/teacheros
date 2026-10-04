@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { initials } from '@/lib/format'
 
@@ -20,7 +20,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
+    { to: '/app/analytics', label: 'Analytics' },
     { to: '/app/reports', label: 'Reports' },
+    { to: '/app/settings', label: 'Settings' },
 
   ],
   ADMIN: [
@@ -34,7 +36,9 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
+    { to: '/app/analytics', label: 'Analytics' },
     { to: '/app/reports', label: 'Reports' },
+    { to: '/app/settings', label: 'Settings' },
   ],
   TEACHER: [
     { to: '/app', label: 'Overview' },
@@ -47,14 +51,18 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/tests', label: 'Tests' },
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
+    { to: '/app/analytics', label: 'Analytics' },
     { to: '/app/reports', label: 'Reports' },
+    { to: '/app/settings', label: 'Settings' },
   ],
   STAFF: [
     { to: '/app', label: 'Overview' },
     { to: '/app/students', label: 'Students' },
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
+    { to: '/app/analytics', label: 'Analytics' },
     { to: '/app/reports', label: 'Reports' },
+    { to: '/app/settings', label: 'Settings' },
   ],
   PARENT: [
     { to: '/app', label: 'Overview' },
@@ -66,6 +74,8 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/alerts', label: 'Alerts' },
     { to: '/app/doubts', label: 'Ask Doubt' },
     { to: '/app/messages', label: 'Messages' },
+    { to: '/app/settings', label: 'Settings' },
+
   ],
   STUDENT: [
     { to: '/app', label: 'Overview' },
@@ -74,10 +84,14 @@ const NAV_BY_ROLE: Record<string, NavItem[]> = {
     { to: '/app/homework', label: 'Homework' },
     { to: '/app/study-material', label: 'Study Material' },
     { to: '/app/tests', label: 'Tests & Marks' },
+    { to: '/app/take-test', label: 'Take Test' },
     { to: '/app/fees', label: 'Fees' },
     { to: '/app/alerts', label: 'Alerts' },
     { to: '/app/doubts', label: 'Ask Doubt' },
     { to: '/app/messages', label: 'Messages' },
+    { to: '/app/settings', label: 'Settings' },
+
+
   ],
 }
 
@@ -90,11 +104,31 @@ const ROLE_LABEL: Record<string, string> = {
   STUDENT: 'Student',
 }
 
+// Same "stay mounted through the exit animation" approach as ui.tsx's
+// Modal - the overlay/drawer needs to still be in the DOM while its
+// slide-out plays, so unmounting is delayed by the animation's own
+// duration rather than happening the instant menuOpen flips to false.
+const MENU_ANIMATION_MS = 180
+
 export function Layout({ children }: { children: ReactNode }) {
   const { role, phoneNumber, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const items = NAV_BY_ROLE[role ?? ''] ?? []
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuRendered, setMenuRendered] = useState(false)
+  const [menuClosing, setMenuClosing] = useState(false)
+
+  useEffect(() => {
+    if (menuOpen) {
+      setMenuRendered(true)
+      setMenuClosing(false)
+    } else if (menuRendered) {
+      setMenuClosing(true)
+      const timer = setTimeout(() => setMenuRendered(false), MENU_ANIMATION_MS)
+      return () => clearTimeout(timer)
+    }
+  }, [menuOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sidebarContent = (
     <>
@@ -105,7 +139,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
         <button
           onClick={() => setMenuOpen(false)}
-          className="md:hidden text-paper/70 hover:text-paper text-2xl leading-none px-1"
+          className="md:hidden text-paper/70 hover:text-paper text-2xl leading-none px-1 transition-colors"
           aria-label="Close menu"
         >
           ×
@@ -119,8 +153,8 @@ export function Layout({ children }: { children: ReactNode }) {
             end={item.to === '/app'}
             onClick={() => setMenuOpen(false)}
             className={({ isActive }) =>
-              `block rounded-md px-3 py-2 text-sm transition-colors ${
-                isActive ? 'bg-chalk text-ink font-medium' : 'text-paper/80 hover:bg-white/10'
+              `block rounded-md px-3 py-2 text-sm transition-all duration-150 ${
+                isActive ? 'bg-chalk text-ink font-medium' : 'text-paper/80 hover:bg-white/10 hover:translate-x-0.5'
               }`
             }
           >
@@ -154,24 +188,34 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen flex bg-paper">
       <div className="md:hidden fixed top-0 inset-x-0 h-14 bg-ink text-paper flex items-center justify-between px-4 z-30">
         <span className="font-display text-lg tracking-tight">TeacherOS</span>
-        <button onClick={() => setMenuOpen(true)} className="p-2 -mr-2" aria-label="Open menu">
+        <button onClick={() => setMenuOpen(true)} className="p-2 -mr-2 transition-transform active:scale-90" aria-label="Open menu">
           <span className="block w-6 h-0.5 bg-paper mb-1.5" />
           <span className="block w-6 h-0.5 bg-paper mb-1.5" />
           <span className="block w-6 h-0.5 bg-paper" />
         </button>
       </div>
 
-      {menuOpen && (
+      {menuRendered && (
         <div className="md:hidden fixed inset-0 z-40 flex">
-          <div className="w-64 shrink-0 bg-ink text-paper flex flex-col">{sidebarContent}</div>
-          <div className="flex-1 bg-ink/40" onClick={() => setMenuOpen(false)} />
+          <div className={`w-64 shrink-0 bg-ink text-paper flex flex-col ${menuClosing ? 'animate-slide-out-left' : 'animate-slide-in-left'}`}>
+            {sidebarContent}
+          </div>
+          <div
+            className={`flex-1 bg-ink/40 ${menuClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
+            onClick={() => setMenuOpen(false)}
+          />
         </div>
       )}
 
       <aside className="hidden md:flex w-60 shrink-0 bg-ink text-paper flex-col">{sidebarContent}</aside>
 
       <main className="flex-1 min-w-0 overflow-y-auto pt-14 md:pt-0">
-        <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 md:px-8 md:py-10">{children}</div>
+        {/* Keyed by pathname so each route change remounts this div and
+            replays the fade - a lightweight stand-in for a real page
+            transition without a routing-animation library. */}
+        <div key={location.pathname} className="max-w-5xl mx-auto px-4 py-6 sm:px-6 md:px-8 md:py-10 animate-fade-in">
+          {children}
+        </div>
       </main>
     </div>
   )
