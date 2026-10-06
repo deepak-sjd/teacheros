@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { EmptyState } from '@/components/ui'
+import { EmptyState, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 import type { DownloadUrlResponse, Page, Student, StudyMaterial } from '@/lib/types'
 
@@ -29,7 +29,15 @@ function MaterialList({ student }: { student: Student }) {
       .then((page) => setItems(page.content))
   }, [student.batchId])
 
-  if (items === null) return <p className="text-slate text-sm">Loading…</p>
+  if (items === null) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-lg" />
+        ))}
+      </div>
+    )
+  }
   if (!student.batchId || items.length === 0) {
     return <EmptyState title="No files yet" description="Nothing uploaded for this batch right now." />
   }

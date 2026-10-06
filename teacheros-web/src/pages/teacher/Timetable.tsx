@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, MeetingPlatform, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton } from '@/components/ui'
 import { MEETING_PLATFORM_LABELS } from '@/lib/format'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -79,7 +79,16 @@ export function TimetablePage() {
           </div>
 
           {loading ? (
-            <p className="text-slate text-sm">Loading…</p>
+            <div className="overflow-x-auto">
+              <div className="grid grid-cols-7 gap-3 min-w-[640px]">
+                {DAYS.map((day) => (
+                  <div key={day}>
+                    <Skeleton className="h-4 w-8 mb-2" />
+                    <Skeleton className="h-14 rounded-md" />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : slots.length === 0 ? (
             <EmptyState
               title="No schedule set"

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, Page, Student } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Modal, Row, Select } from '@/components/ui'
+import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row, Select } from '@/components/ui'
 
 export function Students() {
   const [students, setStudents] = useState<Student[]>([])
@@ -38,7 +38,7 @@ export function Students() {
       />
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <LedgerSkeleton columns={6} />
       ) : students.length === 0 ? (
         <EmptyState
           title="No students yet"

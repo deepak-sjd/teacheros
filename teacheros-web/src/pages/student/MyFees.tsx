@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { EmptyState, Ledger, Row, Cell, StatusPill, Button } from '@/components/ui'
+import { EmptyState, Ledger, Row, Cell, StatusPill, Button, LedgerSkeleton } from '@/components/ui'
 import { PayFeeModal } from '@/components/PayFeeModal'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -17,7 +17,7 @@ function FeeLedger({ student }: { student: Student }) {
 
   useEffect(load, [student.id])
 
-  if (fees === null) return <p className="text-slate text-sm">Loading…</p>
+  if (fees === null) return <LedgerSkeleton columns={6} />
   if (fees.length === 0) return <EmptyState title="No fees on record" />
 
   return (

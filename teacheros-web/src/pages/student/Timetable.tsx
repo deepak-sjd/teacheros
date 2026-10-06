@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { EmptyState } from '@/components/ui'
+import { EmptyState, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 import { isSlotLiveNow, MEETING_PLATFORM_LABELS } from '@/lib/format'
 import type { Student, TimetableSlot } from '@/lib/types'
@@ -36,7 +36,20 @@ function TimetableGrid({ student }: { student: Student }) {
     api.get<TimetableSlot[]>(`/api/v1/timetable/batches/${student.batchId}`).then(setSlots)
   }, [student.batchId])
 
-  if (slots === null) return <p className="text-slate text-sm">Loading…</p>
+  if (slots === null) {
+    return (
+      <div className="overflow-x-auto">
+        <div className="grid grid-cols-7 gap-3 min-w-[640px]">
+          {DAYS.map((day) => (
+            <div key={day}>
+              <Skeleton className="h-4 w-8 mb-2" />
+              <Skeleton className="h-14 rounded-md" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
   if (!student.batchId || slots.length === 0) {
     return <EmptyState title="No schedule set" description="Your teacher hasn't set a weekly schedule for this batch yet." />
   }

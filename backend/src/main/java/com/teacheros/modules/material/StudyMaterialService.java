@@ -60,7 +60,7 @@ public class StudyMaterialService {
         }
         if (!AllowedContentTypes.isAllowed(file.getContentType())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_FILE_TYPE",
-                    "That file type isn't supported. Upload a PDF, Word document, or image.");
+                    "That file type isn't supported. Upload a PDF, Word document, image, or text file.");
         }
 
         String objectKey = storageService.upload(tenantId, batchId, file);

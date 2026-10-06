@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { AttendanceStatus, Batch, Page, Student, StudentAttendanceRecord } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Row, Select } from '@/components/ui'
+import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Row, Select } from '@/components/ui'
 import { AttendanceQrModal } from '@/components/AttendanceQrModal'
 import { todayIso } from '@/lib/format'
 
@@ -101,7 +101,7 @@ export function Attendance() {
       {batches.length === 0 ? (
         <EmptyState title="No batches to mark attendance for" description="Create a batch first." />
       ) : loading ? (
-        <p className="text-slate text-sm">Loading roster…</p>
+        <LedgerSkeleton columns={2} />
       ) : students.length === 0 ? (
         <EmptyState title="No students in this batch" description="Add students to this batch to mark attendance." />
       ) : (

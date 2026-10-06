@@ -10,11 +10,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -39,6 +41,7 @@ public class AnthropicAiTutorClient implements AiTutorClient {
     private final String apiKey;
     private final String model;
     private final int maxTokens;
+    private final int contentMaxTokens;
 
     public AnthropicAiTutorClient(
             ObjectMapper objectMapper,
@@ -47,7 +50,12 @@ public class AnthropicAiTutorClient implements AiTutorClient {
             // used - deliberately not hardcoded deeper than this one
             // default, since model names change over time.
             @Value("${app.ai.anthropic.model:claude-sonnet-5}") String model,
-            @Value("${app.ai.anthropic.max-tokens:500}") int maxTokens) {
+            @Value("${app.ai.anthropic.max-tokens:500}") int maxTokens,
+            // A tutoring answer is a short paragraph; a batch of MCQ
+            // questions (or a page of study notes) is a lot more text, so
+            // content generation gets its own, larger budget rather than
+            // reusing maxTokens and silently truncating mid-question.
+            @Value("${app.ai.anthropic.content-max-tokens:2000}") int contentMaxTokens) {
         if (apiKey == null || apiKey.isBlank()) {
             // Fail fast at startup, same rule as JWT_SECRET/DB_* in prod -
             // better than every first doubt-solver request failing at
@@ -63,6 +71,7 @@ public class AnthropicAiTutorClient implements AiTutorClient {
         this.apiKey = apiKey;
         this.model = model;
         this.maxTokens = maxTokens;
+        this.contentMaxTokens = contentMaxTokens;
     }
 
     @Override
@@ -95,13 +104,48 @@ public class AnthropicAiTutorClient implements AiTutorClient {
     }
 
     @Override
-    public String studyPlan(String studentGrade, List<SubjectWeakness> weakSubjects) {
+    public List<GeneratedQuestion> generateQuestions(
+            String subject, String topic, String grade, String difficulty, int count) {
+        String raw = sendSingleTurn(
+                questionsSystemPrompt(), questionsUserPrompt(subject, topic, grade, difficulty, count),
+                contentMaxTokens);
+        return parseQuestions(raw, count);
+    }
+
+    @Override
+    public String generateNotes(String subject, String topic, String grade) {
+        return sendSingleTurn(notesSystemPrompt(), notesUserPrompt(subject, topic, grade), contentMaxTokens).strip();
+    }
+
+    /**
+     * One-shot call with no prior turns - both content-generation methods
+     * are a single instruction-in, text-out exchange, unlike #answer's
+     * ongoing thread. Reuses #extractText (response parsing is identical
+     * regardless of what was asked) but intentionally does NOT reuse
+     * #buildRequestBody, which is shaped around DoubtSender history that
+     * doesn't apply here.
+     */
+    private String sendSingleTurn(String systemPrompt, String userPrompt, int tokenBudget) {
         try {
-            String requestBody = buildStudyPlanRequestBody(studentGrade, weakSubjects);
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("model", model);
+            root.put("max_tokens", tokenBudget);
+            root.put("system", systemPrompt);
+            ArrayNode messages = root.putArray("messages");
+            ObjectNode message = messages.addObject();
+            message.put("role", "user");
+            message.put("content", userPrompt);
+
+            String requestBody;
+            try {
+                requestBody = objectMapper.writeValueAsString(root);
+            } catch (Exception e) {
+                throw new AiTutorException("Failed to build AI content-generation request", e);
+            }
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(API_URL))
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(Duration.ofSeconds(60))
                     .header("Content-Type", "application/json")
                     .header("x-api-key", apiKey)
                     .header("anthropic-version", ANTHROPIC_VERSION)
@@ -119,8 +163,131 @@ public class AnthropicAiTutorClient implements AiTutorClient {
         } catch (AiTutorException e) {
             throw e;
         } catch (Exception e) {
-            throw new AiTutorException("Failed to get a study plan from the AI tutor", e);
+            throw new AiTutorException("Failed to generate AI content", e);
         }
+    }
+
+    private String questionsSystemPrompt() {
+        return """
+                You draft multiple-choice quiz questions for a teacher at a school/coaching centre in India to \
+                review, edit, and use in a test. The teacher has full control to edit or discard anything you \
+                write before it's ever shown to a student - draft confidently.
+
+                Respond with ONLY a JSON array, no markdown code fences, no commentary before or after it. Each \
+                element must have exactly these fields:
+                  "questionText": string
+                  "optionA": string
+                  "optionB": string
+                  "optionC": string
+                  "optionD": string
+                  "correctOption": one of "A", "B", "C", "D"
+                  "marks": a positive number (e.g. 1)
+
+                Guidelines:
+                - Four distinct, plausible options per question - wrong options should be realistic mistakes a \
+                student could make, not obviously silly.
+                - Vary which letter is correct across questions - do not make every correct answer "A".
+                - Questions should be answerable from the stated topic alone, without external context.
+                - Keep wording concise and exam-appropriate for the stated grade/difficulty.
+                """;
+    }
+
+    private String questionsUserPrompt(String subject, String topic, String grade, String difficulty, int count) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Write ").append(count).append(" multiple-choice questions");
+        if (subject != null && !subject.isBlank())
+            sb.append(" for the subject \"").append(subject).append("\"");
+        sb.append(" on the topic \"").append(topic).append("\"");
+        if (grade != null && !grade.isBlank())
+            sb.append(", for grade/class ").append(grade).append(" students");
+        sb.append(", at ").append(difficulty == null || difficulty.isBlank() ? "medium" : difficulty)
+                .append(" difficulty.");
+        return sb.toString();
+    }
+
+    private String notesSystemPrompt() {
+        return """
+                You draft short study notes for a teacher at a school/coaching centre in India to review, edit, \
+                and share with students as study material. The teacher has full control to edit anything you \
+                write before students see it - draft confidently.
+
+                Respond with the notes themselves only - no preamble like "Here are your notes", no markdown \
+                code fences around the whole thing. Plain text with simple structure (short headings, bullet \
+                points where useful) is fine; keep it focused and exam-relevant rather than exhaustive.
+                """;
+    }
+
+    private String notesUserPrompt(String subject, String topic, String grade) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Write study notes");
+        if (subject != null && !subject.isBlank())
+            sb.append(" for the subject \"").append(subject).append("\"");
+        sb.append(" on the topic \"").append(topic).append("\"");
+        if (grade != null && !grade.isBlank())
+            sb.append(", for grade/class ").append(grade).append(" students");
+        sb.append(".");
+        return sb.toString();
+    }
+
+    /**
+     * Defensive, not strict: a malformed or incomplete entry is dropped
+     * rather than failing the whole batch - a teacher getting 7 good
+     * questions back from a request for 8 is a minor inconvenience, not an
+     * error, and strips any markdown fences the model adds despite being
+     * told not to (small/self-hosted models in particular tend to ignore
+     * that instruction more often than Claude does).
+     */
+    private List<GeneratedQuestion> parseQuestions(String raw, int count) {
+        String json = stripJsonFences(raw);
+        List<GeneratedQuestion> drafts = new ArrayList<>();
+        try {
+            JsonNode arr = objectMapper.readTree(json);
+            if (!arr.isArray()) {
+                throw new AiTutorException("AI response was not a JSON array of questions", null);
+            }
+            for (JsonNode q : arr) {
+                if (drafts.size() >= count)
+                    break;
+                String questionText = q.path("questionText").asText(null);
+                String optionA = q.path("optionA").asText(null);
+                String optionB = q.path("optionB").asText(null);
+                String optionC = q.path("optionC").asText(null);
+                String optionD = q.path("optionD").asText(null);
+                String correctOption = q.path("correctOption").asText(null);
+                if (isBlank(questionText) || isBlank(optionA) || isBlank(optionB)
+                        || isBlank(optionC) || isBlank(optionD)
+                        || correctOption == null || !correctOption.matches("[ABCD]")) {
+                    log.warn("Dropping malformed AI-generated question: {}", q);
+                    continue;
+                }
+                BigDecimal marks = q.path("marks").isNumber() ? q.path("marks").decimalValue() : BigDecimal.ONE;
+                if (marks.signum() <= 0)
+                    marks = BigDecimal.ONE;
+                drafts.add(new GeneratedQuestion(
+                        questionText, optionA, optionB, optionC, optionD, correctOption, marks));
+            }
+        } catch (AiTutorException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AiTutorException("Failed to parse AI-generated questions", e);
+        }
+        return drafts;
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private String stripJsonFences(String text) {
+        String trimmed = text.strip();
+        if (trimmed.startsWith("```")) {
+            int firstNewline = trimmed.indexOf('\n');
+            if (firstNewline != -1)
+                trimmed = trimmed.substring(firstNewline + 1);
+            if (trimmed.endsWith("```"))
+                trimmed = trimmed.substring(0, trimmed.length() - 3);
+        }
+        return trimmed.strip();
     }
 
     private String buildRequestBody(String studentGrade, List<Turn> recentHistory, String question) {
@@ -144,49 +311,6 @@ public class AnthropicAiTutorClient implements AiTutorClient {
         } catch (Exception e) {
             throw new AiTutorException("Failed to build AI tutor request", e);
         }
-    }
-
-    private String buildStudyPlanRequestBody(String studentGrade, List<SubjectWeakness> weakSubjects) {
-        ObjectNode root = objectMapper.createObjectNode();
-        root.put("model", model);
-        root.put("max_tokens", maxTokens);
-        root.put("system", studyPlanSystemPrompt(studentGrade));
-
-        ArrayNode messages = root.putArray("messages");
-        ObjectNode userMessage = messages.addObject();
-        userMessage.put("role", "user");
-        userMessage.put("content", AiTutorClient.formatWeakSubjects(weakSubjects));
-
-        try {
-            return objectMapper.writeValueAsString(root);
-        } catch (Exception e) {
-            throw new AiTutorException("Failed to build AI tutor request", e);
-        }
-    }
-
-    // Independently tunable from the doubt-answering systemPrompt() below -
-    // see AiTutorClient#formatWeakSubjects's javadoc for why the data
-    // formatting IS shared while this persona/tone text is not.
-    private String studyPlanSystemPrompt(String studentGrade) {
-        String gradeContext = (studentGrade == null || studentGrade.isBlank())
-                ? "a school or coaching-centre student"
-                : "a grade/class " + studentGrade + " student";
-        return """
-                You are a friendly, encouraging study coach for %s in India, used inside a school/coaching \
-                management app. You've been given a list of subjects where this student is currently \
-                scoring lower than their other subjects, based on their graded test marks.
-
-                Guidelines:
-                - Write a short, encouraging, actionable study plan (roughly 150-250 words) that helps the \
-                student improve specifically in these subjects.
-                - Suggest concrete next steps - what to revise, how to practice, how to split time across \
-                the subjects - rather than generic advice like "study harder".
-                - Keep the tone positive and motivating, not discouraging - a low score is a starting \
-                point to improve from, not a verdict.
-                - Format as short paragraphs or a short bulleted list, readable on a phone screen.
-                - Base the plan only on the subjects and scores given - do not invent subjects or scores \
-                that weren't provided.
-                """.formatted(gradeContext);
     }
 
     /**

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { EmptyState } from '@/components/ui'
+import { EmptyState, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import type { AppNotification, Student } from '@/lib/types'
@@ -19,7 +19,15 @@ function AlertsList({ student }: { student: Student }) {
     setNotifications((prev) => (prev ? prev.map((it) => (it.id === n.id ? { ...it, read: true } : it)) : prev))
   }
 
-  if (notifications === null) return <p className="text-slate text-sm">Loading…</p>
+  if (notifications === null) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-lg" />
+        ))}
+      </div>
+    )
+  }
   if (notifications.length === 0) {
     return <EmptyState title="No alerts" description="Attendance and fee alerts will show up here." />
   }

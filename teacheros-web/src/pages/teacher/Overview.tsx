@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type { AttendanceTrendResponse, Batch, Fee, Page, Student, SubjectPerformanceResponse } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { StatBlock, Button, Ledger, Row, Cell, EmptyState } from '@/components/ui'
+import { StatBlock, StatBlockSkeleton, Button, Ledger, Row, Cell, EmptyState, Skeleton, LedgerSkeleton } from '@/components/ui'
 import { BarChart, LineChart } from '@/components/Charts'
 import { formatCurrency } from '@/lib/format'
 
@@ -40,7 +40,24 @@ export function Overview() {
       <PageHeader title="Overview" description="Today's snapshot across your batches, students, and fees." />
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+            <StatBlockSkeleton />
+            <StatBlockSkeleton />
+            <StatBlockSkeleton />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+            <div className="border border-line rounded-lg bg-white p-5">
+              <Skeleton className="h-4 w-32 mb-4" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+            <div className="border border-line rounded-lg bg-white p-5">
+              <Skeleton className="h-4 w-40 mb-4" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          </div>
+          <LedgerSkeleton columns={4} />
+        </>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'   // ← new
 import { StudentSectionShell } from '@/components/StudentSectionShell'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Skeleton } from '@/components/ui'
 import { api, ApiError } from '@/lib/api'
 import type {
   Assessment,
@@ -82,7 +82,15 @@ function OnlineTestList({ student }: { student: Student }) {
   }
 
   if (error) return <ErrorBanner message={error} />
-  if (items === null) return <p className="text-slate text-sm">Loading…</p>
+  if (items === null) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-lg" />
+        ))}
+      </div>
+    )
+  }
   if (items.length === 0) {
     return <EmptyState title="No online tests yet" description="Your teacher hasn't published one for your batch." />
   }
@@ -208,7 +216,11 @@ function TakeTestScreen({ test, onDone }: { test: Assessment; onDone: () => void
       {error && <ErrorBanner message={error} />}
 
       {!session ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <div className="space-y-4 mb-6">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
       ) : (
         <>
           <div className="space-y-4 mb-6">
@@ -250,4 +262,3 @@ export function StudentTakeTest() {
     </StudentSectionShell>
   )
 }
-

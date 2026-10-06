@@ -1,8 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
-import type { Assessment, Batch, MarkResponse, Page, QuestionInput, QuestionResponse, Student, TestType } from '@/lib/types'
+import type {
+  Assessment,
+  Batch,
+  GenerateQuestionsResponse,
+  MarkResponse,
+  Page,
+  QuestionInput,
+  QuestionResponse,
+  Student,
+  TestType,
+} from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 import { formatDate, todayIso } from '@/lib/format'
 
 export function TestsPage() {
@@ -78,7 +88,11 @@ export function TestsPage() {
           </div>
 
           {loading ? (
-            <p className="text-slate text-sm">Loading…</p>
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
           ) : tests.length === 0 ? (
             <EmptyState
               title="No tests for this batch"
@@ -331,7 +345,11 @@ function GradingScreen({ test, onBack }: { test: Assessment; onBack: () => void 
       {error && <ErrorBanner message={error} />}
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <div className="space-y-2 mb-6">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 rounded-lg" />
+          ))}
+        </div>
       ) : students.length === 0 ? (
         <EmptyState title="No students in this batch" description="Add students to this batch first." />
       ) : saved ? (
@@ -394,6 +412,18 @@ function QuestionsEditor({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
+
+  // If the list is still just the single untouched starter question,
+  // the AI's drafts replace it outright; otherwise they're appended so a
+  // teacher can generate a second batch without losing questions they've
+  // already written or edited.
+  function handleGenerated(drafts: QuestionInput[]) {
+    setQuestions((prev) =>
+      prev.length === 1 && JSON.stringify(prev[0]) === JSON.stringify(BLANK_QUESTION) ? drafts : [...prev, ...drafts],
+    )
+    setSaved(false)
+  }
 
   useEffect(() => {
     api
@@ -463,9 +493,14 @@ function QuestionsEditor({
         title={`Questions: ${test.title}`}
         description={`${questions.length} question${questions.length === 1 ? '' : 's'} \u00b7 ${totalMarks} marks total`}
         action={
-          <Button variant="secondary" onClick={onBack}>
-            Back to tests
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setGenerateOpen(true)}>
+              Generate with AI
+            </Button>
+            <Button variant="secondary" onClick={onBack}>
+              Back to tests
+            </Button>
+          </div>
         }
       />
 
@@ -477,7 +512,11 @@ function QuestionsEditor({
       )}
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <div className="space-y-4 mb-6">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-64 rounded-lg" />
+          ))}
+        </div>
       ) : (
         <>
           <div className="space-y-4 mb-6">
@@ -548,6 +587,120 @@ function QuestionsEditor({
           </div>
         </>
       )}
+
+      <GenerateQuestionsModal
+        open={generateOpen}
+        defaultSubject={test.subject ?? ''}
+        onClose={() => setGenerateOpen(false)}
+        onGenerated={(drafts) => {
+          setGenerateOpen(false)
+          handleGenerated(drafts)
+        }}
+      />
     </Layout>
+  )
+}
+
+/**
+ * Drafts, not a direct save - the generated questions land in
+ * QuestionsEditor's own editable list (same as a blank question added by
+ * hand) so a teacher reviews/edits/removes any of them before "Save
+ * questions" ever calls the API. Nothing from this modal is persisted by
+ * itself.
+ */
+function GenerateQuestionsModal({
+  open,
+  defaultSubject,
+  onClose,
+  onGenerated,
+}: {
+  open: boolean
+  defaultSubject: string
+  onClose: () => void
+  onGenerated: (drafts: QuestionInput[]) => void
+}) {
+  const [topic, setTopic] = useState('')
+  const [subject, setSubject] = useState(defaultSubject)
+  const [grade, setGrade] = useState('')
+  const [difficulty, setDifficulty] = useState('medium')
+  const [count, setCount] = useState('5')
+  const [error, setError] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+
+    if (!topic.trim()) {
+      setError('Enter a topic to generate questions about.')
+      return
+    }
+    const parsedCount = Math.max(1, Math.min(Number(count) || 5, 20))
+
+    setGenerating(true)
+    try {
+      const res = await api.post<GenerateQuestionsResponse>('/api/v1/content-generator/questions', {
+        topic,
+        subject: subject || undefined,
+        grade: grade || undefined,
+        difficulty,
+        count: parsedCount,
+      })
+      onGenerated(res.questions)
+      setTopic('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not generate questions. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Generate questions with AI">
+      {error && <ErrorBanner message={error} />}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Topic"
+          placeholder="e.g. Quadratic equations"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          required
+        />
+        <Input label="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        <Input
+          label="Grade (optional)"
+          placeholder="e.g. 10"
+          value={grade}
+          onChange={(e) => setGrade(e.target.value)}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="Difficulty" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </Select>
+          <Input
+            label="Number of questions"
+            type="number"
+            min="1"
+            max="20"
+            value={count}
+            onChange={(e) => setCount(e.target.value)}
+          />
+        </div>
+        <p className="text-xs text-slate">
+          You'll be able to review and edit every question before saving - nothing is added to the test until you
+          click "Save questions".
+        </p>
+        <div className="flex gap-2 justify-end pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={generating}>
+            {generating ? 'Generating…' : 'Generate'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }

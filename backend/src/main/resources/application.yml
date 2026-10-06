@@ -99,11 +99,6 @@ app:
     # against runaway load on whichever provider is configured, not a
     # product-facing quota.
     daily-question-limit: ${AI_DAILY_QUESTION_LIMIT:30}
-    # A subject whose average graded-marks percentage falls below this is
-    # flagged "weak" by StudyPlanService - 60 is a reasonable generic
-    # pass/fail-adjacent line, override per-deployment if a tenant wants
-    # stricter/looser.
-    weak-subject-threshold: ${AI_WEAK_SUBJECT_THRESHOLD:60}
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       model: ${OLLAMA_MODEL:llama3.2}
@@ -111,7 +106,13 @@ app:
     anthropic:
       api-key: ${ANTHROPIC_API_KEY:}
       model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+      # Budget for a tutoring answer - a short paragraph.
       max-tokens: ${ANTHROPIC_MAX_TOKENS:500}
+      # Separate, larger budget for the AI Content Generator (a batch of
+      # MCQ questions or a page of study notes is a lot more text than a
+      # doubt-solver answer) - see AnthropicAiTutorClient#generateQuestions
+      # / #generateNotes.
+      content-max-tokens: ${ANTHROPIC_CONTENT_MAX_TOKENS:2000}
   storage:
     # Defaults point at the localhost-mapped MinIO port for a local `mvn
     # spring-boot:run`. When running via docker-compose, STORAGE_ENDPOINT
@@ -125,6 +126,22 @@ app:
     # conservative for MVP - notes/PDFs/images, not full lecture videos.
     # Revisit if/when recorded-class video upload becomes a real requirement.
     max-file-size-mb: ${STORAGE_MAX_FILE_SIZE_MB:20}
+  payment:
+    # "mock" (dev default) - no real gateway. PaymentController returns a
+    # fake order the frontend "pays" with its own "Simulate successful
+    # payment" button; no real money, no Razorpay account needed to
+    # develop/test the whole fee-payment flow.
+    # "razorpay" calls the real Razorpay API - requires
+    # app.payment.razorpay.key-id/key-secret below (an actual Razorpay
+    # account) and is billed per transaction per Razorpay's own pricing.
+    provider: ${PAYMENT_PROVIDER:mock}
+    currency: ${PAYMENT_CURRENCY:INR}
+    razorpay:
+      # Only read when app.payment.provider=razorpay - RazorpayPaymentGateway
+      # isn't even instantiated (@ConditionalOnProperty) when provider=mock,
+      # so these can stay blank otherwise.
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
 
 server:
   port: ${SERVER_PORT:8080}

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { Fee, Page, Student } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Modal, Row, Select, StatusPill } from '@/components/ui'
+import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row, Select, StatusPill } from '@/components/ui'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
 
 export function Fees() {
@@ -38,7 +38,7 @@ export function Fees() {
       />
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <LedgerSkeleton columns={7} />
       ) : pending.length === 0 ? (
         <EmptyState
           title="Nothing pending"

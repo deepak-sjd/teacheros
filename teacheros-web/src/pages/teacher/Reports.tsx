@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, Cell, EmptyState, ErrorBanner, Ledger, Row, Select, StatBlock } from '@/components/ui'
+import { Button, Cell, EmptyState, ErrorBanner, Ledger, LedgerSkeleton, Row, Select, StatBlock, StatBlockSkeleton } from '@/components/ui'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, BatchRanking, Page, ReportSummary } from '@/lib/types'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
@@ -174,7 +174,15 @@ export function ReportsPage() {
 
       {!report ? (
         loading ? (
-          <p className="text-slate text-sm">Generating…</p>
+          <div className="space-y-8">
+            <div className="grid grid-cols-3 gap-4">
+              <StatBlockSkeleton />
+              <StatBlockSkeleton />
+              <StatBlockSkeleton />
+            </div>
+            <LedgerSkeleton columns={4} />
+            <LedgerSkeleton columns={4} />
+          </div>
         ) : (
           <EmptyState title="No report yet" description="Pick a period and hit Generate." />
         )
@@ -248,7 +256,7 @@ export function ReportsPage() {
             <section>
               <h3 className="font-display text-xl text-ink mb-3">Class ranking</h3>
               {rankingLoading ? (
-                <p className="text-slate text-sm">Loading…</p>
+                <LedgerSkeleton columns={4} />
               ) : !ranking || ranking.entries.length === 0 ? (
                 <EmptyState title="No students in this batch" />
               ) : (

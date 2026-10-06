@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, Modal, Row } from '@/components/ui'
+import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row } from '@/components/ui'
 
 export function Batches() {
   const [batches, setBatches] = useState<Batch[]>([])
@@ -28,7 +28,7 @@ export function Batches() {
       />
 
       {loading ? (
-        <p className="text-slate text-sm">Loading…</p>
+        <LedgerSkeleton columns={3} />
       ) : batches.length === 0 ? (
         <EmptyState
           title="No batches yet"

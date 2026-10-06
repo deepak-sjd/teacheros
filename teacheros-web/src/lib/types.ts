@@ -244,6 +244,24 @@ export interface StudentRank {
   totalStudents: number
 }
 
+// Mirrors RankingDtos.StudentRankResponse exactly (the live endpoint -
+// NOT MarkDtos.StudentRankResponse, an earlier unused draft of this same
+// feature left behind in the backend with a different field shape).
+// rank/rankedStudentCount are null/0 when the student has no graded marks
+// yet, or no batch assigned.
+//
+// NOTE (merge): in the new code this interface was also named `StudentRank`,
+// which clashes with the old `StudentRank` above. To keep the old one intact,
+// this one is exported as `StudentRankLive`.
+export interface StudentRankLive {
+  studentId: string
+  batchId: string | null
+  rank: number | null
+  rankedStudentCount: number
+  averagePercentage: number
+  gradedTestCount: number
+}
+
 // --- Messages (parent-teacher messaging) ---
 // Mirrors backend/.../modules/message/dto/MessageDtos.java exactly.
 
@@ -450,6 +468,34 @@ export interface SubmitResultResponse {
   score: number
   maxMarks: number
   breakdown: AnswerResult[]
+}
+
+// --- AI Content Generator (teacher-facing) ---
+// Mirrors backend/.../modules/content/dto/ContentGeneratorDtos.java
+// exactly. GenerateQuestionsResponse.questions is field-for-field the
+// same shape as QuestionInput (above) by design, so a draft can be
+// dropped straight into the Questions editor's own list with no reshaping.
+
+export interface GenerateQuestionsRequest {
+  topic: string
+  subject?: string
+  grade?: string
+  difficulty?: string
+  count: number
+}
+
+export interface GenerateQuestionsResponse {
+  questions: QuestionInput[]
+}
+
+export interface GenerateNotesRequest {
+  topic: string
+  subject?: string
+  grade?: string
+}
+
+export interface GenerateNotesResponse {
+  notes: string
 }
 
 

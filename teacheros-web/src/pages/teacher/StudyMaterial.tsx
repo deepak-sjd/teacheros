@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
-import type { Batch, DownloadUrlResponse, Page, StudyMaterial } from '@/lib/types'
+import type { Batch, DownloadUrlResponse, GenerateNotesResponse, Page, StudyMaterial } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 import { formatDate } from '@/lib/format'
 
 function formatFileSize(bytes: number): string {
@@ -17,6 +17,7 @@ export function StudyMaterialPage() {
   const [items, setItems] = useState<StudyMaterial[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -55,7 +56,16 @@ export function StudyMaterialPage() {
       <PageHeader
         title="Study material"
         description="Notes, PDFs, and reference documents for a batch. Every student in the batch can view and download."
-        action={batches.length > 0 ? <Button onClick={() => setUploadOpen(true)}>Upload file</Button> : undefined}
+        action={
+          batches.length > 0 ? (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setGenerateOpen(true)}>
+                Generate notes with AI
+              </Button>
+              <Button onClick={() => setUploadOpen(true)}>Upload file</Button>
+            </div>
+          ) : undefined
+        }
       />
 
       {batches.length === 0 ? (
@@ -73,7 +83,11 @@ export function StudyMaterialPage() {
           </div>
 
           {loading ? (
-            <p className="text-slate text-sm">Loading…</p>
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
           ) : items.length === 0 ? (
             <EmptyState
               title="No files for this batch"
@@ -120,6 +134,16 @@ export function StudyMaterialPage() {
         onClose={() => setUploadOpen(false)}
         onUploaded={() => {
           setUploadOpen(false)
+          load(batchId)
+        }}
+      />
+
+      <GenerateNotesModal
+        open={generateOpen}
+        batchId={batchId}
+        onClose={() => setGenerateOpen(false)}
+        onSaved={() => {
+          setGenerateOpen(false)
           load(batchId)
         }}
       />
@@ -203,6 +227,159 @@ function UploadModal({
           </Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/**
+ * Draft, review/edit, then save - the same two-step shape as
+ * GenerateQuestionsModal's draft-then-review flow in teacher/Tests.tsx,
+ * except here "save" means uploading the edited text as a plain-text file
+ * through the existing study-material upload endpoint (see
+ * AllowedContentTypes - text/plain was added specifically for this),
+ * rather than a separate "AI notes" storage path.
+ */
+function GenerateNotesModal({
+  open,
+  batchId,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  batchId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [step, setStep] = useState<'draft' | 'review'>('draft')
+  const [topic, setTopic] = useState('')
+  const [subject, setSubject] = useState('')
+  const [grade, setGrade] = useState('')
+  const [notes, setNotes] = useState('')
+  const [title, setTitle] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  function reset() {
+    setStep('draft')
+    setTopic('')
+    setSubject('')
+    setGrade('')
+    setNotes('')
+    setTitle('')
+    setError(null)
+  }
+
+  function handleClose() {
+    reset()
+    onClose()
+  }
+
+  async function handleGenerate(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (!topic.trim()) {
+      setError('Enter a topic to generate notes about.')
+      return
+    }
+
+    setGenerating(true)
+    try {
+      const res = await api.post<GenerateNotesResponse>('/api/v1/content-generator/notes', {
+        topic,
+        subject: subject || undefined,
+        grade: grade || undefined,
+      })
+      setNotes(res.notes)
+      setTitle(topic)
+      setStep('review')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not generate notes. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleSave() {
+    setError(null)
+    if (!title.trim()) {
+      setError('Enter a title for this study material.')
+      return
+    }
+    if (!notes.trim()) {
+      setError('Notes cannot be empty.')
+      return
+    }
+
+    const file = new File([notes], `${title.trim().slice(0, 80)}.txt`, { type: 'text/plain' })
+    const formData = new FormData()
+    formData.append('batchId', batchId)
+    formData.append('title', title)
+    formData.append('description', 'Generated with AI, reviewed and edited by the teacher.')
+    formData.append('file', file)
+
+    setSaving(true)
+    try {
+      await api.uploadFile('/api/v1/study-material', formData)
+      reset()
+      onSaved()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save these notes.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Generate notes with AI">
+      {error && <ErrorBanner message={error} />}
+      {step === 'draft' ? (
+        <form onSubmit={handleGenerate} className="space-y-4">
+          <Input
+            label="Topic"
+            placeholder="e.g. The French Revolution"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            required
+          />
+          <Input label="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <Input
+            label="Grade (optional)"
+            placeholder="e.g. 9"
+            value={grade}
+            onChange={(e) => setGrade(e.target.value)}
+          />
+          <div className="flex gap-2 justify-end pt-2">
+            <Button type="button" variant="secondary" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={generating}>
+              {generating ? 'Generating…' : 'Generate'}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-4">
+          <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={12} />
+          <p className="text-xs text-slate">
+            Review and edit the notes above — they're saved as a text file once you click "Save as study material".
+          </p>
+          <div className="flex gap-2 justify-between pt-2">
+            <Button type="button" variant="secondary" onClick={() => setStep('draft')}>
+              Back
+            </Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save as study material'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }

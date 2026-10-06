@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { Button, EmptyState, ErrorBanner, Ledger, Row, Cell, StatBlock } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Ledger, Row, Cell, StatBlock, StatBlockSkeleton, LedgerSkeleton } from '@/components/ui'
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
@@ -108,7 +108,18 @@ function MarksList({ student }: { student: Student }) {
     }
   }
 
-  if (marks === null) return <p className="text-slate text-sm">Loading…</p>
+  if (marks === null) {
+    return (
+      <div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <StatBlockSkeleton />
+          <StatBlockSkeleton />
+          <StatBlockSkeleton />
+        </div>
+        <LedgerSkeleton columns={4} />
+      </div>
+    )
+  }
 
   const sorted = [...marks].sort((a, b) => b.testDate.localeCompare(a.testDate))
 

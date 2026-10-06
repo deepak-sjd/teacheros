@@ -1,6 +1,7 @@
-import { type ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useReveal } from '@/lib/useReveal'
+import { Button, Input, Textarea } from '@/components/ui'
 
 function Reveal({ children, className = '' }: { children: ReactNode; className?: string }) {
   const { ref, visible } = useReveal<HTMLDivElement>()
@@ -44,6 +45,74 @@ const CAPABILITIES = [
   { value: '24/7', label: 'AI doubt solving' },
   { value: 'Live', label: 'Parent alerts' },
 ]
+
+const STEPS = [
+  {
+    title: 'Sign up',
+    body: 'Create your workspace with a phone number - no setup call, no install.',
+  },
+  {
+    title: 'Add batches & students',
+    body: 'Set up your classes, bring in your student list, and link each guardian\u2019s phone number.',
+  },
+  {
+    title: 'Run your day',
+    body: 'Take attendance, assign homework, record a test, or log a fee payment as you normally would.',
+  },
+  {
+    title: 'Parents & students log in',
+    body: 'Each gets their own dashboard - attendance, marks, fees, and alerts, no extra setup from you.',
+  },
+]
+
+// Client-side stub, by design - there's no backend endpoint for this yet
+// (see Dev1_Landing_Page_Round2.md). Submitting just shows a confirmation
+// state; nothing is sent anywhere until a real endpoint exists. Swap
+// handleSubmit's body for a real api.post(...) call once one does.
+function ContactForm() {
+  const [name, setName] = useState('')
+  const [contact, setContact] = useState('')
+  const [message, setMessage] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSubmitted(true)
+  }
+
+  if (submitted) {
+    return (
+      <div className="rounded-lg border border-line bg-white p-8 text-center animate-fade-in">
+        <p className="font-display text-xl text-ink">Thanks, {name.split(' ')[0] || 'there'}!</p>
+        <p className="text-slate text-sm mt-2">
+          We&rsquo;ve got your message and will get back to you shortly.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-white p-6 sm:p-8 space-y-4 text-left">
+      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+      <Input
+        label="Email or phone"
+        value={contact}
+        onChange={(e) => setContact(e.target.value)}
+        placeholder="you@school.com"
+        required
+      />
+      <Textarea
+        label="What would you like to know?"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Tell us a bit about your school or coaching center"
+      />
+      <Button type="submit" className="w-full justify-center">
+        Request a demo
+      </Button>
+    </form>
+  )
+}
 
 export function Landing() {
   return (
@@ -117,11 +186,37 @@ export function Landing() {
         </div>
       </section>
 
+      {/* How it works */}
+      <section className="bg-paper-dim border-y border-line">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
+          <Reveal className="text-center max-w-xl mx-auto mb-12">
+            <h2 className="font-display text-3xl sm:text-4xl">How it works</h2>
+            <p className="text-slate mt-3">From sign-up to your first class, in four steps.</p>
+          </Reveal>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {STEPS.map((s, i) => (
+              <Reveal key={s.title} className="relative">
+                <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+                  <div className="h-10 w-10 rounded-full bg-ink text-paper font-display flex items-center justify-center shrink-0 mb-4">
+                    {i + 1}
+                  </div>
+                  <h3 className="font-display text-lg text-ink mb-1.5">{s.title}</h3>
+                  <p className="text-slate text-sm leading-relaxed">{s.body}</p>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div aria-hidden className="hidden lg:block absolute top-5 left-[calc(100%-0.75rem)] w-6 h-px bg-line" />
+                )}
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Screenshot placeholder - a stylized mockup built from the app's
           own design tokens, not a real screenshot (there isn't one to use
           here yet). Swap the inner content for an actual <img> once a
           real dashboard screenshot exists. */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-20">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
         <Reveal>
           <div className="rounded-xl border border-line bg-ink p-2 sm:p-3 shadow-xl">
             <div className="flex items-center gap-1.5 px-3 py-2">
@@ -169,22 +264,28 @@ export function Landing() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20 text-center">
-        <Reveal>
-          <h2 className="font-display text-3xl sm:text-4xl max-w-xl mx-auto">
-            Spend less time on admin, more time teaching.
-          </h2>
-          <p className="text-slate mt-3 max-w-md mx-auto">
-            Set up your first batch in a few minutes - no setup call needed.
-          </p>
-          <Link
-            to="/login"
-            className="inline-block mt-8 rounded-md bg-ink text-paper px-7 py-3 text-sm font-medium transition-all duration-150 hover:bg-ink-light active:scale-[0.97]"
-          >
-            Get started free
-          </Link>
-        </Reveal>
+      {/* Contact / demo request */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <Reveal>
+            <h2 className="font-display text-3xl sm:text-4xl max-w-md">
+              Spend less time on admin, more time teaching.
+            </h2>
+            <p className="text-slate mt-4 max-w-md">
+              Want a walkthrough first? Send us a note and we&rsquo;ll get back to you - or just dive in,
+              set up takes a few minutes.
+            </p>
+            <Link
+              to="/login"
+              className="inline-block mt-6 rounded-md bg-white text-ink border border-line px-6 py-3 text-sm font-medium transition-all duration-150 hover:bg-paper-dim active:scale-[0.97]"
+            >
+              Get started free
+            </Link>
+          </Reveal>
+          <Reveal>
+            <ContactForm />
+          </Reveal>
+        </div>
       </section>
 
       <footer className="border-t border-line">

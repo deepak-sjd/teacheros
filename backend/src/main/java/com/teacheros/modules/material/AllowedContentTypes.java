@@ -22,7 +22,15 @@ final class AllowedContentTypes {
             "image/jpeg",
             "image/webp",
             "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            // Added for the AI Content Generator's "save as study material"
+            // flow (see content/ContentGeneratorService + the frontend's
+            // GenerateNotesModal) - a teacher's reviewed/edited AI notes
+            // are uploaded as a plain-text file through this same existing
+            // endpoint, not a new storage path. Plain text carries no
+            // macros/scripts, so it doesn't weaken the "never trust the
+            // declared type" posture the rest of this whitelist is about.
+            "text/plain");
 
     static boolean isAllowed(String contentType) {
         return contentType != null && WHITELIST.contains(contentType);

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
-import { StatBlock, EmptyState } from '@/components/ui'
-import { StudyPlanCard } from '@/components/StudyPlanCard'
+import { StatBlock, StatBlockSkeleton, EmptyState, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 import { BarChart } from '@/components/Charts'
 import { formatCurrency, formatDate, isSlotLiveNow, MEETING_PLATFORM_LABELS, todayIso } from '@/lib/format'
@@ -14,7 +13,6 @@ import type {
   Student,
   StudentMarkHistoryEntry,
   StudentRank,
-  StudyPlanResponse,
   TimetableSlot,
 } from '@/lib/types'
 
@@ -36,7 +34,6 @@ function OverviewPanel({ student }: { student: Student }) {
   const [slots, setSlots] = useState<TimetableSlot[]>([])
   const [marks, setMarks] = useState<StudentMarkHistoryEntry[]>([])
   const [rank, setRank] = useState<StudentRank | null>(null)
-  const [studyPlan, setStudyPlan] = useState<StudyPlanResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -56,13 +53,8 @@ function OverviewPanel({ student }: { student: Student }) {
         : Promise.resolve<TimetableSlot[]>([]),
       api.get<StudentMarkHistoryEntry[]>(`/api/v1/tests/students/${student.id}/marks`),
       api.get<StudentRank>(`/api/v1/tests/students/${student.id}/rank`),
-      // Never calls the AI provider - just the cheap, always-fresh subject
-      // breakdown plus whatever plan text (if any) was last generated. See
-      // StudyPlanCard's own comment for why regenerating is a separate,
-      // explicit action rather than happening here.
-      api.get<StudyPlanResponse>(`/api/v1/study-plan/students/${student.id}`),
     ])
-      .then(([summ, f, notifs, hw, tt, m, r, sp]) => {
+      .then(([summ, f, notifs, hw, tt, m, r]) => {
         setSummary(summ)
         setFees(f)
         setNotifications(notifs)
@@ -70,12 +62,32 @@ function OverviewPanel({ student }: { student: Student }) {
         setSlots(tt)
         setMarks(m)
         setRank(r)
-        setStudyPlan(sp)
       })
       .finally(() => setLoading(false))
   }, [student.id, student.batchId])
 
-  if (loading) return <p className="text-slate text-sm">Loading…</p>
+  if (loading) {
+    return (
+      <div>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
+          <StatBlockSkeleton />
+          <StatBlockSkeleton />
+          <StatBlockSkeleton />
+          <StatBlockSkeleton />
+        </div>
+        <Skeleton className="h-5 w-32 mb-3" />
+        <div className="space-y-2 mb-8">
+          <Skeleton className="h-16 rounded-lg" />
+          <Skeleton className="h-16 rounded-lg" />
+        </div>
+        <Skeleton className="h-5 w-40 mb-3" />
+        <div className="space-y-2">
+          <Skeleton className="h-16 rounded-lg" />
+          <Skeleton className="h-16 rounded-lg" />
+        </div>
+      </div>
+    )
+  }
 
   const totalDue = fees.reduce((sum, f) => sum + (f.amountDue - f.amountPaid), 0)
   const unread = notifications.filter((n) => !n.read)
@@ -204,8 +216,6 @@ function OverviewPanel({ student }: { student: Student }) {
           />
         </div>
       )}
-
-      {studyPlan && <StudyPlanCard studentId={student.id} initial={studyPlan} />}
 
       <h3 className="font-display text-xl text-ink mb-3">Recent alerts</h3>
       {notifications.length === 0 ? (

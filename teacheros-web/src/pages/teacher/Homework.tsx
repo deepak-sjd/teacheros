@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, Homework, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 import { formatDate, todayIso } from '@/lib/format'
 
 export function HomeworkPage() {
@@ -70,7 +70,11 @@ export function HomeworkPage() {
           </div>
 
           {loading ? (
-            <p className="text-slate text-sm">Loading…</p>
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
           ) : items.length === 0 ? (
             <EmptyState
               title="No homework for this batch"
