@@ -6,9 +6,12 @@ import com.teacheros.common.tenant.CurrentTenantProvider;
 import com.teacheros.modules.assessment.dto.AttemptDtos.AnswerInput;
 import com.teacheros.modules.assessment.dto.AttemptDtos.AnswerResult;
 import com.teacheros.modules.assessment.dto.AttemptDtos.MyAttemptResponse;
+import com.teacheros.modules.assessment.dto.AttemptDtos.QuestionStat;
 import com.teacheros.modules.assessment.dto.AttemptDtos.StartTestResponse;
+import com.teacheros.modules.assessment.dto.AttemptDtos.StudentResultRow;
 import com.teacheros.modules.assessment.dto.AttemptDtos.SubmitAnswersRequest;
 import com.teacheros.modules.assessment.dto.AttemptDtos.SubmitResultResponse;
+import com.teacheros.modules.assessment.dto.AttemptDtos.TestResultsResponse;
 import com.teacheros.modules.assessment.dto.QuestionDtos.QuestionForStudent;
 import com.teacheros.modules.assessment.dto.QuestionDtos.QuestionInput;
 import com.teacheros.modules.assessment.dto.QuestionDtos.QuestionResponse;
@@ -216,6 +219,77 @@ public class OnlineTestService {
         upsertMark(tenantId, testId, studentId, totalScore);
 
         return new SubmitResultResponse(totalScore, assessment.getMaxMarks(), breakdown);
+    }
+
+    /**
+     * Teacher-facing results: every attempt's status/score, plus
+     * per-question stats computed only from SUBMITTED attempts (an
+     * in-progress attempt has TestAnswer rows too - partial answers
+     * saved so far - but counting those would make "unansweredCount"
+     * misleading while someone is mid-attempt, so they're excluded here
+     * the same way submit() is what finalizes a score).
+     */
+    public TestResultsResponse results(UUID testId) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Assessment assessment = requireOnlineTest(tenantId, testId);
+        batchAccessGuard.assertCanView(assessment.getBatchId());
+
+        List<TestAttempt> attempts = testAttemptRepository.findByTenantIdAndTestId(tenantId, testId);
+        List<StudentResultRow> studentRows = attempts.stream()
+                .map(a -> new StudentResultRow(a.getStudentId(), a.getStatus().name(), a.getSubmittedAt(),
+                        a.getScore(), assessment.getMaxMarks()))
+                .toList();
+
+        List<UUID> submittedAttemptIds = attempts.stream()
+                .filter(a -> a.getStatus() == AttemptStatus.SUBMITTED)
+                .map(TestAttempt::getId)
+                .toList();
+
+        List<TestQuestion> questions = testQuestionRepository.findByTenantIdAndTestIdOrderByPositionAsc(tenantId,
+                testId);
+        List<TestAnswer> answers = submittedAttemptIds.isEmpty()
+                ? List.of()
+                : testAnswerRepository.findByTenantIdAndAttemptIdIn(tenantId, submittedAttemptIds);
+        Map<UUID, List<TestAnswer>> answersByQuestion = answers.stream()
+                .collect(Collectors.groupingBy(TestAnswer::getQuestionId));
+
+        List<QuestionStat> questionStats = questions.stream()
+                .map(q -> toQuestionStat(q, answersByQuestion.getOrDefault(q.getId(), List.of())))
+                .toList();
+
+        return new TestResultsResponse(testId, assessment.getTitle(), assessment.getMaxMarks(), studentRows,
+                questionStats);
+    }
+
+    private QuestionStat toQuestionStat(TestQuestion question, List<TestAnswer> answersForQuestion) {
+        int correct = 0;
+        int incorrect = 0;
+        int unanswered = 0;
+        Map<String, Integer> wrongOptionCounts = new java.util.HashMap<>();
+
+        for (TestAnswer a : answersForQuestion) {
+            if (a.getSelectedOption() == null) {
+                unanswered++;
+            } else if (Boolean.TRUE.equals(a.getIsCorrect())) {
+                correct++;
+            } else {
+                incorrect++;
+                wrongOptionCounts.merge(a.getSelectedOption(), 1, Integer::sum);
+            }
+        }
+
+        // Only reported when there's a single clear leader - a tie (or no
+        // wrong answers at all) isn't a meaningfully "most common" one, so
+        // null is more honest than picking an arbitrary winner.
+        String mostCommonWrong = wrongOptionCounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .filter(leader -> wrongOptionCounts.values().stream().filter(v -> v.equals(leader.getValue()))
+                        .count() == 1)
+                .map(Map.Entry::getKey)
+                .orElse(null);
+
+        return new QuestionStat(question.getId(), question.getQuestionText(), question.getCorrectOption(),
+                correct, incorrect, unanswered, mostCommonWrong);
     }
 
     // ---- helpers -------------------------------------------------

@@ -130,14 +130,14 @@ function MarksList({ student }: { student: Student }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
         {rank && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
+            <StatBlock label="Graded tests" value={String(rank.gradedTestCount)} />
             <StatBlock
-              label="Total marks"
-              value={rank.rank !== null ? `${rank.totalMarksObtained} / ${rank.totalMaxMarks}` : '\u2014'}
+              label="Average score"
+              value={rank.rank !== null ? `${rank.averagePercentage}%` : '\u2014'}
             />
-            <StatBlock label="Average score" value={rank.percentage !== null ? `${rank.percentage}%` : '\u2014'} />
             <StatBlock
               label="Rank in batch"
-              value={rank.rank !== null ? `${rank.rank} of ${rank.totalStudents}` : `Not yet ranked`}
+              value={rank.rank !== null ? `${rank.rank} of ${rank.rankedStudentCount}` : `Not yet ranked`}
             />
           </div>
         )}

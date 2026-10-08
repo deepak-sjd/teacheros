@@ -141,7 +141,7 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
         <StatBlock
           label="Class rank"
           value={rank?.rank ? `#${rank.rank}` : '\u2014'}
-          sub={rank?.rank ? `of ${rank.totalStudents} ranked` : 'Not enough graded tests yet'}
+          sub={rank?.rank ? `of ${rank.rankedStudentCount} ranked` : 'Not enough graded tests yet'}
         />
         <StatBlock label="Outstanding balance" value={formatCurrency(totalDue)} />
         <StatBlock label="Fee records" value={String(fees.length)} />

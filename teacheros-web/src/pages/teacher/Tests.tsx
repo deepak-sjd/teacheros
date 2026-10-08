@@ -9,11 +9,26 @@ import type {
   QuestionInput,
   QuestionResponse,
   Student,
+  StudentResultRow,
+  TestResultsResponse,
   TestType,
 } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
-import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
-import { formatDate, todayIso } from '@/lib/format'
+import {
+  Button,
+  Cell,
+  EmptyState,
+  ErrorBanner,
+  Input,
+  Ledger,
+  Modal,
+  Row,
+  Select,
+  Skeleton,
+  StatBlock,
+  Textarea,
+} from '@/components/ui'
+import { formatDate, formatDateTime, todayIso } from '@/lib/format'
 
 export function TestsPage() {
   const [batches, setBatches] = useState<Batch[]>([])
@@ -23,6 +38,7 @@ export function TestsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [grading, setGrading] = useState<Assessment | null>(null)
   const [editingQuestions, setEditingQuestions] = useState<Assessment | null>(null)
+  const [viewingResults, setViewingResults] = useState<Assessment | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -53,6 +69,10 @@ export function TestsPage() {
 
   if (grading) {
     return <GradingScreen test={grading} onBack={() => setGrading(null)} />
+  }
+
+  if (viewingResults) {
+    return <ResultsScreen test={viewingResults} onBack={() => setViewingResults(null)} />
   }
 
   if (editingQuestions) {
@@ -129,7 +149,7 @@ export function TestsPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => setGrading(t)}
+                        onClick={() => (t.testType === 'ONLINE_MCQ' ? setViewingResults(t) : setGrading(t))}
                         className="text-sm text-slate hover:text-ink underline underline-offset-2"
                       >
                         {t.testType === 'ONLINE_MCQ' ? 'Results' : 'Grade'}
@@ -376,6 +396,143 @@ function GradingScreen({ test, onBack }: { test: Assessment; onBack: () => void 
           <Button onClick={handleSubmit} disabled={saving}>
             {saving ? 'Saving…' : 'Save marks'}
           </Button>
+        </>
+      )}
+    </Layout>
+  )
+}
+
+/**
+ * Teacher-facing results for an ONLINE_MCQ test - GET /{id}/results only
+ * returns a row for students who have a TestAttempt (started or
+ * submitted), so this merges that against the full batch roster the same
+ * way student/Tests.tsx's OnlineTestsSection merges tests against
+ * my-attempt: a roster student with no row here is "not started".
+ */
+function ResultsScreen({ test, onBack }: { test: Assessment; onBack: () => void }) {
+  const [students, setStudents] = useState<Student[] | null>(null)
+  const [results, setResults] = useState<TestResultsResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setStudents(null)
+    setResults(null)
+    setError(null)
+    Promise.all([
+      api.get<Page<Student>>('/api/v1/students', { batchId: test.batchId, size: 200 }),
+      api.get<TestResultsResponse>(`/api/v1/tests/${test.id}/results`),
+    ])
+      .then(([studentsRes, resultsRes]) => {
+        setStudents(studentsRes.content)
+        setResults(resultsRes)
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load results.'))
+  }, [test.id, test.batchId])
+
+  const loading = students === null || results === null
+
+  const rows = loading
+    ? []
+    : students
+        .map((s) => ({ student: s, result: results.students.find((r) => r.studentId === s.id) ?? null }))
+        .sort((a, b) => {
+          // Submitted (highest score first), then in-progress, then not
+          // started - a teacher scanning this wants to see who's done
+          // first, not an alphabetical roster.
+          const rank = (r: StudentResultRow | null) => (r?.status === 'SUBMITTED' ? 0 : r ? 1 : 2)
+          const rankDiff = rank(a.result) - rank(b.result)
+          if (rankDiff !== 0) return rankDiff
+          return (b.result?.score ?? -1) - (a.result?.score ?? -1)
+        })
+
+  const submittedCount = loading ? 0 : results.students.filter((r) => r.status === 'SUBMITTED').length
+  const submittedScores = loading ? [] : results.students.filter((r) => r.status === 'SUBMITTED' && r.score !== null).map((r) => r.score!)
+  const averageScore = submittedScores.length > 0 ? submittedScores.reduce((sum, v) => sum + v, 0) / submittedScores.length : null
+
+  return (
+    <Layout>
+      <PageHeader
+        title={`Results: ${test.title}`}
+        description={loading ? undefined : `Out of ${results.maxMarks}`}
+        action={
+          <Button variant="secondary" onClick={onBack}>
+            Back to tests
+          </Button>
+        }
+      />
+
+      {error && <ErrorBanner message={error} />}
+
+      {loading ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Skeleton className="h-20 rounded-lg" />
+            <Skeleton className="h-20 rounded-lg" />
+            <Skeleton className="h-20 rounded-lg" />
+          </div>
+          <Skeleton className="h-64 rounded-lg" />
+        </div>
+      ) : students.length === 0 ? (
+        <EmptyState title="No students in this batch" description="Add students to this batch first." />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            <StatBlock label="Submitted" value={`${submittedCount} of ${students.length}`} />
+            <StatBlock
+              label="Average score"
+              value={averageScore !== null ? `${averageScore.toFixed(1)} / ${results.maxMarks}` : '\u2014'}
+            />
+            <StatBlock label="Questions" value={String(results.questions.length)} />
+          </div>
+
+          <h3 className="font-display text-xl text-ink mb-3">By student</h3>
+          <Ledger columns={['Student', 'Status', 'Submitted', 'Score']}>
+            {rows.map(({ student, result }) => (
+              <Row key={student.id}>
+                <Cell>{student.fullName}</Cell>
+                <Cell>
+                  {result?.status === 'SUBMITTED' ? 'Submitted' : result?.status === 'IN_PROGRESS' ? 'In progress' : 'Not started'}
+                </Cell>
+                <Cell>{result?.submittedAt ? formatDateTime(result.submittedAt) : '\u2014'}</Cell>
+                <Cell className="font-medium">
+                  {result?.status === 'SUBMITTED' ? `${result.score} / ${result.maxMarks}` : '\u2014'}
+                </Cell>
+              </Row>
+            ))}
+          </Ledger>
+
+          <h3 className="font-display text-xl text-ink mt-8 mb-3">By question</h3>
+          {results.questions.length === 0 ? (
+            <EmptyState title="No questions" description="This test has no questions yet." />
+          ) : (
+            <div className="space-y-2">
+              {results.questions.map((q, i) => {
+                const answered = q.correctCount + q.incorrectCount
+                const total = answered + q.unansweredCount
+                const correctPct = total > 0 ? Math.round((q.correctCount / total) * 100) : 0
+                return (
+                  <div key={q.questionId} className="border border-line rounded-lg bg-white p-4">
+                    <p className="text-sm text-ink mb-2">
+                      <span className="text-slate-light">Q{i + 1}.</span> {q.questionText}
+                    </p>
+                    <div className="h-2 rounded-full bg-paper-dim overflow-hidden mb-2">
+                      <div className="h-full bg-chalk" style={{ width: `${correctPct}%` }} />
+                    </div>
+                    <p className="text-xs text-slate-light">
+                      {q.correctCount} correct {'\u00b7'} {q.incorrectCount} incorrect {'\u00b7'} {q.unansweredCount}{' '}
+                      unanswered
+                      {q.mostCommonWrongOption && (
+                        <>
+                          {' '}
+                          {'\u00b7'} most picked wrong answer: option {q.mostCommonWrongOption}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
     </Layout>

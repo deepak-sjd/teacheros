@@ -262,18 +262,18 @@ export function ReportsPage() {
               ) : (
                 <>
                   <p className="text-xs text-slate-light mb-3">
-                    Ranked by total marks scored across every graded test in this batch, all-time — not limited to
-                    the period selected above. {ranking.entries.filter((e) => e.rank !== null).length} of{' '}
-                    {ranking.totalStudents} student{ranking.totalStudents === 1 ? '' : 's'} have at least one graded
-                    test.
+                    Ranked by average score across every graded test in this batch, all-time — not limited to the
+                    period selected above. {ranking.entries.filter((e) => e.rank !== null).length} of{' '}
+                    {ranking.rankedStudentCount} student{ranking.rankedStudentCount === 1 ? '' : 's'} have at least
+                    one graded test.
                   </p>
-                  <Ledger columns={['Rank', 'Student', 'Score', 'Average %']}>
+                  <Ledger columns={['Rank', 'Student', 'Graded tests', 'Average %']}>
                     {ranking.entries.map((e) => (
                       <Row key={e.studentId}>
                         <Cell className="font-medium">{e.rank ? `#${e.rank}` : '\u2014'}</Cell>
                         <Cell>{e.studentName}</Cell>
-                        <Cell>{e.rank ? `${e.totalMarksObtained} / ${e.totalMaxMarks}` : '\u2014'}</Cell>
-                        <Cell>{e.percentage !== null ? `${e.percentage}%` : '\u2014'}</Cell>
+                        <Cell>{e.gradedTestCount}</Cell>
+                        <Cell>{e.rank ? `${e.averagePercentage}%` : '\u2014'}</Cell>
                       </Row>
                     ))}
                   </Ledger>

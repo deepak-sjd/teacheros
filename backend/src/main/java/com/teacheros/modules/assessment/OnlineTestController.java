@@ -4,6 +4,7 @@ import com.teacheros.modules.assessment.dto.AttemptDtos.MyAttemptResponse;
 import com.teacheros.modules.assessment.dto.AttemptDtos.StartTestResponse;
 import com.teacheros.modules.assessment.dto.AttemptDtos.SubmitAnswersRequest;
 import com.teacheros.modules.assessment.dto.AttemptDtos.SubmitResultResponse;
+import com.teacheros.modules.assessment.dto.AttemptDtos.TestResultsResponse;
 import com.teacheros.modules.assessment.dto.QuestionDtos.QuestionResponse;
 import com.teacheros.modules.assessment.dto.QuestionDtos.ReplaceQuestionsRequest;
 import jakarta.validation.Valid;
@@ -60,5 +61,11 @@ public class OnlineTestController {
     public ResponseEntity<SubmitResultResponse> submit(@PathVariable UUID id,
             @Valid @RequestBody SubmitAnswersRequest request) {
         return ResponseEntity.ok(onlineTestService.submit(id, request));
+    }
+
+    @GetMapping("/{id}/results")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<TestResultsResponse> results(@PathVariable UUID id) {
+        return ResponseEntity.ok(onlineTestService.results(id));
     }
 }

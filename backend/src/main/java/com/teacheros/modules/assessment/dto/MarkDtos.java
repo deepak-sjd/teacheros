@@ -48,26 +48,10 @@ public class MarkDtos {
             LocalDate testDate) {
     }
 
-    /**
-     * A student's standing among their own batch-mates - "Rank 5/45" on
-     * the report-card mockup. Deliberately anonymous and aggregate-only:
-     * unlike listMarksForTest (staff-only, named, per-test), this never
-     * reveals who else is in the batch or what any of them individually
-     * scored, only this student's own totals and their numeric position.
-     * That distinction is why this is safe to expose to PARENT/STUDENT
-     * while listMarksForTest is not - see AssessmentService's javadoc on
-     * that method.
-     *
-     * rank is null when this student has no graded marks yet (nothing to
-     * rank them by) or has no batch assigned - totalStudents is still
-     * populated in that case so the frontend can show batch size either
-     * way.
-     */
-    public record StudentRankResponse(
-            BigDecimal totalMarksObtained,
-            BigDecimal totalMaxMarks,
-            Double percentage,
-            Integer rank,
-            long totalStudents) {
-    }
+    // NOTE: a StudentRankResponse used to live here. AssessmentService's
+    // actual "student's own rank" endpoint has returned
+    // RankingDtos.StudentRankResponse (a different field shape) for a
+    // while now - this one was never deleted after that switch and had
+    // zero real callers. Removed rather than left as dead code; the real
+    // DTO is RankingDtos.StudentRankResponse.
 }

@@ -232,28 +232,14 @@ export interface StudentMarkHistoryEntry {
 }
 
 // Mirrors MarkDtos.StudentRankResponse. rank/percentage are null when the
-// student has no graded marks yet in their batch - totalStudents is still
-// populated either way. Anonymous/aggregate-only by design - see the
-// backend javadoc on why this is safe to show a PARENT/STUDENT while raw
-// per-student marks for a test are staff-only.
+// Mirrors RankingDtos.StudentRankResponse exactly - this is what
+// GET /api/v1/tests/students/{id}/rank actually returns (confirmed
+// against AssessmentService#getStudentRank's import). rank is null and
+// averagePercentage/gradedTestCount are 0 when the student has no graded
+// marks yet or no batch assigned. Anonymous/aggregate-only by design -
+// see the backend javadoc on why this is safe to show a PARENT/STUDENT
+// while raw per-student marks for a test are staff-only.
 export interface StudentRank {
-  totalMarksObtained: number
-  totalMaxMarks: number
-  percentage: number | null
-  rank: number | null
-  totalStudents: number
-}
-
-// Mirrors RankingDtos.StudentRankResponse exactly (the live endpoint -
-// NOT MarkDtos.StudentRankResponse, an earlier unused draft of this same
-// feature left behind in the backend with a different field shape).
-// rank/rankedStudentCount are null/0 when the student has no graded marks
-// yet, or no batch assigned.
-//
-// NOTE (merge): in the new code this interface was also named `StudentRank`,
-// which clashes with the old `StudentRank` above. To keep the old one intact,
-// this one is exported as `StudentRankLive`.
-export interface StudentRankLive {
   studentId: string
   batchId: string | null
   rank: number | null
@@ -470,6 +456,36 @@ export interface SubmitResultResponse {
   breakdown: AnswerResult[]
 }
 
+// --- Teacher-facing online-test results ---
+// Mirrors backend AttemptDtos.StudentResultRow/QuestionStat/
+// TestResultsResponse exactly.
+
+export interface StudentResultRow {
+  studentId: string
+  status: 'IN_PROGRESS' | 'SUBMITTED'
+  submittedAt: string | null
+  score: number | null
+  maxMarks: number
+}
+
+export interface QuestionStat {
+  questionId: string
+  questionText: string
+  correctOption: string
+  correctCount: number
+  incorrectCount: number
+  unansweredCount: number
+  mostCommonWrongOption: string | null
+}
+
+export interface TestResultsResponse {
+  testId: string
+  title: string
+  maxMarks: number
+  students: StudentResultRow[]
+  questions: QuestionStat[]
+}
+
 // --- AI Content Generator (teacher-facing) ---
 // Mirrors backend/.../modules/content/dto/ContentGeneratorDtos.java
 // exactly. GenerateQuestionsResponse.questions is field-for-field the
@@ -537,16 +553,15 @@ export interface VerifyPaymentRequest {
 export interface BatchRankingEntry {
   studentId: string
   studentName: string
-  totalMarksObtained: number
-  totalMaxMarks: number
-  percentage: number | null
   rank: number | null
+  averagePercentage: number
+  gradedTestCount: number
 }
 
 export interface BatchRanking {
   batchId: string
   batchName: string
-  totalStudents: number
+  rankedStudentCount: number
   entries: BatchRankingEntry[]
 }
 
