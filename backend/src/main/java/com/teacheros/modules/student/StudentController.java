@@ -6,6 +6,7 @@ import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -36,11 +37,21 @@ public class StudentController {
         return ResponseEntity.ok(studentService.update(id, request));
     }
 
+    // Soft delete - history is kept, see StudentService#deactivate.
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
+        studentService.deactivate(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Default sort (name, then id as a tiebreaker) keeps page boundaries
+    // stable between requests.
     @GetMapping
     @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
     public ResponseEntity<Page<StudentResponse>> list(
             @RequestParam(required = false) UUID batchId,
-            Pageable pageable) {
+            @PageableDefault(size = 20, sort = { "fullName", "id" }) Pageable pageable) {
         return ResponseEntity.ok(studentService.list(batchId, pageable));
     }
 

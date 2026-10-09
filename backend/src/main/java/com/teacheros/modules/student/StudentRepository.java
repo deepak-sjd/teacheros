@@ -26,6 +26,11 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     List<Student> findByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId);
 
     /**
+     * Used by BatchService to refuse deactivating a batch that still has students.
+     */
+    long countByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId);
+
+    /**
      * All active students in a tenant whose guardian_phone matches - i.e.
      * this guardian's children, including siblings. This is how a parent
      * account's linked children are derived: no separate parent-student
@@ -39,6 +44,12 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
      * once we already know which tenant the logged-in user belongs to.
      */
     Optional<Student> findFirstByTenantIdAndPhoneNumberAndActiveTrue(UUID tenantId, String phoneNumber);
+
+    /**
+     * Active OR inactive - the unique index uq_students_tenant_phone covers
+     * both, so duplicate-phone checks on create/update must too.
+     */
+    Optional<Student> findFirstByTenantIdAndPhoneNumber(UUID tenantId, String phoneNumber);
 
     /**
      * Used ONLY during first-login account provisioning, before we know

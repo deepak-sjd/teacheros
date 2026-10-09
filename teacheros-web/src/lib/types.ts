@@ -613,3 +613,20 @@ export interface TenantSettingsResponse {
 export interface UpdateTenantRequest {
   name: string
 }
+
+// Mirrors AttendanceDtos.BatchSessionSummary exactly.
+export interface BatchSessionSummary {
+  classSessionId: string
+  sessionDate: string // ISO date
+  presentCount: number
+  absentCount: number
+  lateCount: number
+  totalCount: number
+}
+
+// Mirrors BatchDtos.UpdateBatchRequest exactly.
+export interface UpdateBatchRequest {
+  name: string
+  subject?: string
+  scheduleSummary?: string
+}

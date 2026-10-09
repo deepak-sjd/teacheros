@@ -6,6 +6,7 @@ import com.teacheros.modules.fee.dto.FeeDtos.RecordPaymentRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -50,9 +51,12 @@ public class FeeController {
         return ResponseEntity.ok(feeService.listForStudent(studentId));
     }
 
+    // Default sort is earliest due date first, with id as a tiebreaker so
+    // page boundaries are stable between requests.
     @GetMapping("/pending")
     @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
-    public ResponseEntity<Page<FeeResponse>> listPending(Pageable pageable) {
+    public ResponseEntity<Page<FeeResponse>> listPending(
+            @PageableDefault(size = 20, sort = { "dueDate", "id" }) Pageable pageable) {
         return ResponseEntity.ok(feeService.listPending(pageable));
     }
 }

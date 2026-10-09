@@ -3,29 +3,44 @@ import { api, ApiError } from '@/lib/api'
 import type { Fee, Page, Student } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row, Select, StatusPill } from '@/components/ui'
+import { Pagination, PAGE_SIZE } from '@/components/Pagination'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
 
 export function Fees() {
-  const [pending, setPending] = useState<Fee[]>([])
+  const [data, setData] = useState<Page<Fee> | null>(null)
+  const [page, setPage] = useState(0)
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [payFee, setPayFee] = useState<Fee | null>(null)
 
-  function load() {
+  function load(p = page) {
     setLoading(true)
-    Promise.all([
-      api.get<Page<Fee>>('/api/v1/fees/pending', { size: 100 }),
-      api.get<Page<Student>>('/api/v1/students', { size: 100 }),
-    ])
-      .then(([f, s]) => {
-        setPending(f.content)
-        setStudents(s.content)
+    setError(null)
+    api
+      .get<Page<Fee>>('/api/v1/fees/pending', { page: p, size: PAGE_SIZE })
+      .then((res) => {
+        // A payment can empty the last page - step back one page.
+        if (res.content.length === 0 && p > 0) {
+          setPage(p - 1)
+          return
+        }
+        setData(res)
       })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load fees.'))
       .finally(() => setLoading(false))
   }
 
-  useEffect(load, [])
+  useEffect(() => {
+    load(page)
+  }, [page])
+
+  // Names for the table and the "New fee" dropdown. Note: capped at 100
+  // students - a searchable student picker is the real fix beyond that.
+  useEffect(() => {
+    api.get<Page<Student>>('/api/v1/students', { size: 100 }).then((res) => setStudents(res.content))
+  }, [])
 
   const studentName = (id: string) => students.find((s) => s.id === id)?.fullName ?? id.slice(0, 8)
 
@@ -33,42 +48,68 @@ export function Fees() {
     <Layout>
       <PageHeader
         title="Fees"
-        description="Fees due across all students. Fully paid fees drop off this list."
+        description="Fees due across all students, earliest due date first. Fully paid fees drop off this list."
         action={<Button onClick={() => setCreateOpen(true)}>New fee</Button>}
       />
 
-      {loading ? (
+      {error && <ErrorBanner message={error} />}
+
+      {loading && !data ? (
         <LedgerSkeleton columns={7} />
-      ) : pending.length === 0 ? (
+      ) : !data || data.totalElements === 0 ? (
         <EmptyState
           title="Nothing pending"
           description="Every fee is fully paid."
           action={<Button onClick={() => setCreateOpen(true)}>New fee</Button>}
         />
       ) : (
-        <Ledger columns={['Student', 'Due date', 'Amount due', 'Paid', 'Balance', 'Status', '']}>
-          {pending.map((f) => (
-            <Row key={f.id}>
-              <Cell className="font-medium">{studentName(f.studentId)}</Cell>
-              <Cell>{formatDate(f.dueDate)}</Cell>
-              <Cell>{formatCurrency(f.amountDue)}</Cell>
-              <Cell>{formatCurrency(f.amountPaid)}</Cell>
-              <Cell className="font-medium">{formatCurrency(f.amountDue - f.amountPaid)}</Cell>
-              <Cell>
-                <StatusPill status={f.status} />
-              </Cell>
-              <Cell>
-                <button onClick={() => setPayFee(f)} className="text-sm text-slate hover:text-ink underline underline-offset-2">
-                  Record payment
-                </button>
-              </Cell>
-            </Row>
-          ))}
-        </Ledger>
+        <>
+          <Ledger columns={['Student', 'Due date', 'Amount due', 'Paid', 'Balance', 'Status', '']}>
+            {data.content.map((f) => (
+              <Row key={f.id}>
+                <Cell className="font-medium">{studentName(f.studentId)}</Cell>
+                <Cell>{formatDate(f.dueDate)}</Cell>
+                <Cell>{formatCurrency(f.amountDue)}</Cell>
+                <Cell>{formatCurrency(f.amountPaid)}</Cell>
+                <Cell className="font-medium">{formatCurrency(f.amountDue - f.amountPaid)}</Cell>
+                <Cell>
+                  <StatusPill status={f.status} />
+                </Cell>
+                <Cell>
+                  <button onClick={() => setPayFee(f)} className="text-sm text-slate hover:text-ink underline underline-offset-2">
+                    Record payment
+                  </button>
+                </Cell>
+              </Row>
+            ))}
+          </Ledger>
+          <Pagination
+            page={data.number}
+            totalPages={data.totalPages}
+            totalElements={data.totalElements}
+            size={data.size}
+            onChange={setPage}
+          />
+        </>
       )}
 
-      <NewFeeModal open={createOpen} students={students} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); load() }} />
-      <PaymentModal fee={payFee} onClose={() => setPayFee(null)} onSaved={() => { setPayFee(null); load() }} />
+      <NewFeeModal
+        open={createOpen}
+        students={students}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => {
+          setCreateOpen(false)
+          load(page)
+        }}
+      />
+      <PaymentModal
+        fee={payFee}
+        onClose={() => setPayFee(null)}
+        onSaved={() => {
+          setPayFee(null)
+          load(page)
+        }}
+      />
     </Layout>
   )
 }

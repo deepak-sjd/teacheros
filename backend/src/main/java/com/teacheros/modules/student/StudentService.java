@@ -1,13 +1,17 @@
 package com.teacheros.modules.student;
 
+import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.batch.BatchRepository;
 import com.teacheros.modules.student.dto.StudentDtos.CreateStudentRequest;
 import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
+import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
 import com.teacheros.modules.user.User;
 import com.teacheros.modules.user.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +23,19 @@ public class StudentService {
 
     private final StudentRepository studentRepository;
     private final UserRepository userRepository;
+    private final BatchRepository batchRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final StudentAccessGuard studentAccessGuard;
 
     public StudentService(
             StudentRepository studentRepository,
             UserRepository userRepository,
+            BatchRepository batchRepository,
             CurrentTenantProvider currentTenantProvider,
             StudentAccessGuard studentAccessGuard) {
         this.studentRepository = studentRepository;
         this.userRepository = userRepository;
+        this.batchRepository = batchRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.studentAccessGuard = studentAccessGuard;
     }
@@ -36,6 +43,9 @@ public class StudentService {
     @Transactional
     public StudentResponse create(CreateStudentRequest request) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        assertBatchBelongsToTenant(tenantId, request.batchId());
+        assertPhoneAvailable(tenantId, request.phoneNumber(), null);
+
         Student student = new Student(tenantId, request.batchId(), request.fullName(),
                 request.grade(), request.guardianPhone());
         student.setPhoneNumber(request.phoneNumber());
@@ -51,11 +61,12 @@ public class StudentService {
      * after the fact so they can log in themselves.
      */
     @Transactional
-    public StudentResponse update(UUID studentId,
-            com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest request) {
+    public StudentResponse update(UUID studentId, UpdateStudentRequest request) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+        assertBatchBelongsToTenant(tenantId, request.batchId());
+        assertPhoneAvailable(tenantId, request.phoneNumber(), studentId);
 
         student.setFullName(request.fullName());
         student.setGrade(request.grade());
@@ -65,6 +76,23 @@ public class StudentService {
         student.setBatchId(request.batchId());
         student = studentRepository.save(student);
         return toResponse(student);
+    }
+
+    /**
+     * Soft delete - attendance, marks, fees and messages keep referencing
+     * this student, so the row stays. Inactive students disappear from
+     * lists, rosters, reports, alerts, and from parent/student account
+     * linking. Idempotent.
+     */
+    @Transactional
+    public void deactivate(UUID studentId) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+        if (student.isActive()) {
+            student.setActive(false);
+            studentRepository.save(student);
+        }
     }
 
     public Page<StudentResponse> list(UUID batchId, Pageable pageable) {
@@ -77,11 +105,9 @@ public class StudentService {
 
     /**
      * Any authenticated role can call this (see StudentController - no
-     *
-     * @PreAuthorize restricting it), but PARENT/STUDENT callers only ever
-     *               get their own linked student back - studentAccessGuard enforces
-     *               that
-     *               before we touch anything else. Staff roles are unaffected.
+     * PreAuthorize restricting it), but PARENT/STUDENT callers only ever
+     * get their own linked student back - studentAccessGuard enforces that
+     * before we touch anything else. Staff roles are unaffected.
      */
     public StudentResponse get(UUID studentId) {
         studentAccessGuard.assertCanView(studentId);
@@ -115,6 +141,29 @@ public class StudentService {
         Student student = studentRepository.findFirstByTenantIdAndPhoneNumberAndActiveTrue(tenantId, phoneNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Student", "self"));
         return toResponse(student);
+    }
+
+    // A client-supplied batchId must belong to the caller's own tenant -
+    // without this a student could be enrolled in another tenant's batch.
+    private void assertBatchBelongsToTenant(UUID tenantId, UUID batchId) {
+        if (batchId == null) {
+            return;
+        }
+        batchRepository.findByIdAndTenantId(batchId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Batch", batchId));
+    }
+
+    // uq_students_tenant_phone would otherwise surface as a raw 500.
+    private void assertPhoneAvailable(UUID tenantId, String phoneNumber, UUID selfId) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            return;
+        }
+        studentRepository.findFirstByTenantIdAndPhoneNumber(tenantId, phoneNumber)
+                .filter(other -> !other.getId().equals(selfId))
+                .ifPresent(other -> {
+                    throw new ApiException(HttpStatus.CONFLICT, "STUDENT_PHONE_IN_USE",
+                            "Another student (possibly a deactivated one) already uses that phone number.");
+                });
     }
 
     private String currentUserPhoneNumber() {

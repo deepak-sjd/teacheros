@@ -21,6 +21,7 @@ import { StudentCheckIn } from '@/pages/student/CheckIn'
 import { StudentDoubts } from '@/pages/student/Doubts'
 import { StudentMessages } from '@/pages/student/Messages'
 import { StudentTakeTest } from '@/pages/student/TakeTest'
+import { BatchDetail } from '@/pages/teacher/BatchDetail'
 
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/app/doubts" element={<ProtectedRoute><StudentDoubts /></ProtectedRoute>} />
           <Route path="/app/messages" element={<ProtectedRoute><StudentMessages /></ProtectedRoute>} />
           <Route path="/app/take-test" element={<ProtectedRoute><StudentTakeTest /></ProtectedRoute>} />
+          <Route path="/app/batches/:id" element={<ProtectedRoute><BatchDetail /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </AuthProvider>

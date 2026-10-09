@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,9 +24,15 @@ import java.util.UUID;
  * "the teacher told us cash/UPI/bank transfer was received," not that we
  * processed a transaction. See blueprint Section 27/28: real payment
  * collection is a distinct, later decision that needs a licensed provider.
+ *
+ * OVERDUE rule: unpaid balance and dueDate < today (Asia/Kolkata). It is
+ * applied in deriveStatus (create/payment), by FeeOverdueScheduler (daily),
+ * and by a tenant-scoped sweep at the top of listPending.
  */
 @Service
 public class FeeService {
+
+    private static final ZoneId APP_ZONE = ZoneId.of("Asia/Kolkata");
 
     private final FeeRepository feeRepository;
     private final FeePaymentRepository feePaymentRepository;
@@ -39,10 +47,19 @@ public class FeeService {
         this.studentAccessGuard = studentAccessGuard;
     }
 
+    /**
+     * "Today" for fee purposes - always India time, same as the rest of the app.
+     */
+    public static LocalDate today() {
+        return LocalDate.now(APP_ZONE);
+    }
+
     @Transactional
     public FeeResponse createFee(CreateFeeRequest request) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         Fee fee = new Fee(tenantId, request.studentId(), request.amountDue(), request.dueDate());
+        // A fee created with an already-past due date is overdue immediately.
+        fee.setStatus(deriveStatus(request.amountDue(), BigDecimal.ZERO, request.dueDate()));
         fee = feeRepository.save(fee);
         return toResponse(fee, BigDecimal.ZERO);
     }
@@ -60,7 +77,7 @@ public class FeeService {
         feePaymentRepository.save(new FeePayment(tenantId, fee.getId(), request.amountPaid(), request.method()));
 
         BigDecimal totalPaid = sumPayments(tenantId, fee.getId());
-        fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid));
+        fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid, fee.getDueDate()));
         fee = feeRepository.save(fee);
 
         return toResponse(fee, totalPaid);
@@ -94,7 +111,7 @@ public class FeeService {
         feePaymentRepository.save(payment);
 
         BigDecimal totalPaid = sumPayments(tenantId, fee.getId());
-        fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid));
+        fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid, fee.getDueDate()));
         fee = feeRepository.save(fee);
 
         return toResponse(fee, totalPaid);
@@ -119,6 +136,8 @@ public class FeeService {
 
     public Page<FeeResponse> listPending(Pageable pageable) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        // Catch fees that crossed their due date since the last daily sweep.
+        feeRepository.sweepOverdueForTenant(tenantId, today());
         return feeRepository
                 .findByTenantIdAndStatusIn(tenantId, List.of(FeeStatus.PENDING, FeeStatus.PARTIALLY_PAID,
                         FeeStatus.OVERDUE), pageable)
@@ -131,9 +150,12 @@ public class FeeService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private FeeStatus deriveStatus(BigDecimal amountDue, BigDecimal totalPaid) {
+    private FeeStatus deriveStatus(BigDecimal amountDue, BigDecimal totalPaid, LocalDate dueDate) {
         if (totalPaid.compareTo(amountDue) >= 0) {
             return FeeStatus.PAID;
+        }
+        if (dueDate.isBefore(today())) {
+            return FeeStatus.OVERDUE;
         }
         if (totalPaid.compareTo(BigDecimal.ZERO) > 0) {
             return FeeStatus.PARTIALLY_PAID;

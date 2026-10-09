@@ -1,23 +1,39 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row } from '@/components/ui'
+import { Pagination, PAGE_SIZE } from '@/components/Pagination'
 
 export function Batches() {
-  const [batches, setBatches] = useState<Batch[]>([])
+  const [data, setData] = useState<Page<Batch> | null>(null)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
 
-  function load() {
+  function load(p = page) {
     setLoading(true)
+    setError(null)
     api
-      .get<Page<Batch>>('/api/v1/batches', { size: 100 })
-      .then((res) => setBatches(res.content))
+      .get<Page<Batch>>('/api/v1/batches', { page: p, size: PAGE_SIZE })
+      .then((res) => {
+        // Landed past the end (e.g. the last row of the last page was
+        // removed) - step back; the page effect reloads.
+        if (res.content.length === 0 && p > 0) {
+          setPage(p - 1)
+          return
+        }
+        setData(res)
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load batches.'))
       .finally(() => setLoading(false))
   }
 
-  useEffect(load, [])
+  useEffect(() => {
+    load(page)
+  }, [page])
 
   return (
     <Layout>
@@ -27,24 +43,40 @@ export function Batches() {
         action={<Button onClick={() => setModalOpen(true)}>New batch</Button>}
       />
 
-      {loading ? (
-        <LedgerSkeleton columns={3} />
-      ) : batches.length === 0 ? (
+      {error && <ErrorBanner message={error} />}
+
+      {loading && !data ? (
+        <LedgerSkeleton columns={4} />
+      ) : !data || data.totalElements === 0 ? (
         <EmptyState
           title="No batches yet"
           description="Create your first batch to start enrolling students."
           action={<Button onClick={() => setModalOpen(true)}>New batch</Button>}
         />
       ) : (
-        <Ledger columns={['Name', 'Subject', 'Schedule']}>
-          {batches.map((b) => (
-            <Row key={b.id}>
-              <Cell className="font-medium">{b.name}</Cell>
-              <Cell>{b.subject || '\u2014'}</Cell>
-              <Cell>{b.scheduleSummary || '\u2014'}</Cell>
-            </Row>
-          ))}
-        </Ledger>
+        <>
+          <Ledger columns={['Name', 'Subject', 'Schedule', '']}>
+            {data.content.map((b) => (
+              <Row key={b.id}>
+                <Cell className="font-medium">{b.name}</Cell>
+                <Cell>{b.subject || '\u2014'}</Cell>
+                <Cell>{b.scheduleSummary || '\u2014'}</Cell>
+                <Cell>
+                  <Link to={`/app/batches/${b.id}`} className="text-sm text-slate hover:text-ink underline underline-offset-2">
+                    View
+                  </Link>
+                </Cell>
+              </Row>
+            ))}
+          </Ledger>
+          <Pagination
+            page={data.number}
+            totalPages={data.totalPages}
+            totalElements={data.totalElements}
+            size={data.size}
+            onChange={setPage}
+          />
+        </>
       )}
 
       <NewBatchModal
@@ -52,7 +84,7 @@ export function Batches() {
         onClose={() => setModalOpen(false)}
         onCreated={() => {
           setModalOpen(false)
-          load()
+          load(page)
         }}
       />
     </Layout>

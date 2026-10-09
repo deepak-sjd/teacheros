@@ -28,6 +28,7 @@ import {
   StatBlock,
   Textarea,
 } from '@/components/ui'
+import { Pagination, PAGE_SIZE } from '@/components/Pagination'
 import { formatDate, formatDateTime, todayIso } from '@/lib/format'
 
 export function TestsPage() {
@@ -39,6 +40,8 @@ export function TestsPage() {
   const [grading, setGrading] = useState<Assessment | null>(null)
   const [editingQuestions, setEditingQuestions] = useState<Assessment | null>(null)
   const [viewingResults, setViewingResults] = useState<Assessment | null>(null)
+  const [page, setPage] = useState(0)
+  const [pageMeta, setPageMeta] = useState<Page<Assessment> | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -48,18 +51,26 @@ export function TestsPage() {
     })
   }, [])
 
-  function load(forBatchId: string) {
+  function load(forBatchId: string, p = page) {
     if (!forBatchId) return
     setLoading(true)
     api
-      .get<Page<Assessment>>('/api/v1/tests', { batchId: forBatchId, size: 100 })
-      .then((res) => setTests(res.content))
+      .get<Page<Assessment>>('/api/v1/tests', { batchId: forBatchId, page: p, size: PAGE_SIZE })
+      .then((res) => {
+        // Last item on the page was deleted: step back one page (effect will refetch)
+        if (res.content.length === 0 && p > 0) {
+          setPage(p - 1)
+          return
+        }
+        setTests(res.content)
+        setPageMeta(res)
+      })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    if (batchId) load(batchId)
-  }, [batchId])
+    if (batchId) load(batchId, page)
+  }, [batchId, page])
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this test and all its marks? This cannot be undone.')) return
@@ -98,7 +109,14 @@ export function TestsPage() {
       ) : (
         <>
           <div className="mb-6 max-w-xs">
-            <Select label="Batch" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
+            <Select
+              label="Batch"
+              value={batchId}
+              onChange={(e) => {
+                setBatchId(e.target.value)
+                setPage(0)
+              }}
+            >
               {batches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -120,51 +138,63 @@ export function TestsPage() {
               action={<Button onClick={() => setCreateOpen(true)}>New test</Button>}
             />
           ) : (
-            <div className="space-y-2">
-              {tests.map((t) => (
-                <div key={t.id} className="border border-line rounded-lg bg-white p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-ink">{t.title}</p>
-                        {t.testType === 'ONLINE_MCQ' && (
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-paper-dim text-slate">
-                            Online (MCQ)
-                          </span>
-                        )}
+            <>
+              <div className="space-y-2">
+                {tests.map((t) => (
+                  <div key={t.id} className="border border-line rounded-lg bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-ink">{t.title}</p>
+                          {t.testType === 'ONLINE_MCQ' && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-paper-dim text-slate">
+                              Online (MCQ)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate mt-1">
+                          {t.subject ? `${t.subject} \u00b7 ` : ''}
+                          Out of {t.maxMarks} {'\u00b7'} {formatDate(t.testDate)}
+                          {t.testType === 'ONLINE_MCQ' && t.durationMinutes ? ` \u00b7 ${t.durationMinutes} min` : ''}
+                        </p>
                       </div>
-                      <p className="text-xs text-slate mt-1">
-                        {t.subject ? `${t.subject} \u00b7 ` : ''}
-                        Out of {t.maxMarks} {'\u00b7'} {formatDate(t.testDate)}
-                        {t.testType === 'ONLINE_MCQ' && t.durationMinutes ? ` \u00b7 ${t.durationMinutes} min` : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 whitespace-nowrap">
-                      {t.testType === 'ONLINE_MCQ' && (
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        {t.testType === 'ONLINE_MCQ' && (
+                          <button
+                            onClick={() => setEditingQuestions(t)}
+                            className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                          >
+                            Questions
+                          </button>
+                        )}
                         <button
-                          onClick={() => setEditingQuestions(t)}
+                          onClick={() => (t.testType === 'ONLINE_MCQ' ? setViewingResults(t) : setGrading(t))}
                           className="text-sm text-slate hover:text-ink underline underline-offset-2"
                         >
-                          Questions
+                          {t.testType === 'ONLINE_MCQ' ? 'Results' : 'Grade'}
                         </button>
-                      )}
-                      <button
-                        onClick={() => (t.testType === 'ONLINE_MCQ' ? setViewingResults(t) : setGrading(t))}
-                        className="text-sm text-slate hover:text-ink underline underline-offset-2"
-                      >
-                        {t.testType === 'ONLINE_MCQ' ? 'Results' : 'Grade'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(t.id)}
-                        className="text-sm text-danger hover:opacity-80 underline underline-offset-2"
-                      >
-                        Delete
-                      </button>
+                        <button
+                          onClick={() => handleDelete(t.id)}
+                          className="text-sm text-danger hover:opacity-80 underline underline-offset-2"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {pageMeta && (
+                <Pagination
+                  page={pageMeta.number}
+                  totalPages={pageMeta.totalPages}
+                  totalElements={pageMeta.totalElements}
+                  size={pageMeta.size}
+                  onChange={setPage}
+                />
+              )}
+            </>
           )}
         </>
       )}

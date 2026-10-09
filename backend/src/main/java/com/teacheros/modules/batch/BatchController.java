@@ -2,9 +2,11 @@ package com.teacheros.modules.batch;
 
 import com.teacheros.modules.batch.dto.BatchDtos.BatchResponse;
 import com.teacheros.modules.batch.dto.BatchDtos.CreateBatchRequest;
+import com.teacheros.modules.batch.dto.BatchDtos.UpdateBatchRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -32,12 +34,25 @@ public class BatchController {
     }
 
     @GetMapping
-    public ResponseEntity<Page<BatchResponse>> list(Pageable pageable) {
+    public ResponseEntity<Page<BatchResponse>> list(
+            @PageableDefault(size = 20, sort = { "name", "id" }) Pageable pageable) {
         return ResponseEntity.ok(batchService.list(pageable));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<BatchResponse> get(@PathVariable UUID id) {
         return ResponseEntity.ok(batchService.get(id));
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<BatchResponse> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateBatchRequest request) {
+        return ResponseEntity.ok(batchService.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
+        batchService.deactivate(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -3,6 +3,7 @@ import { api, ApiError } from '@/lib/api'
 import type { Batch, DownloadUrlResponse, GenerateNotesResponse, Page, StudyMaterial } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
+import { Pagination, PAGE_SIZE } from '@/components/Pagination'
 import { formatDate } from '@/lib/format'
 
 function formatFileSize(bytes: number): string {
@@ -18,6 +19,8 @@ export function StudyMaterialPage() {
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
+  const [page, setPage] = useState(0)
+  const [pageMeta, setPageMeta] = useState<Page<StudyMaterial> | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -27,18 +30,26 @@ export function StudyMaterialPage() {
     })
   }, [])
 
-  function load(forBatchId: string) {
+  function load(forBatchId: string, p = page) {
     if (!forBatchId) return
     setLoading(true)
     api
-      .get<Page<StudyMaterial>>('/api/v1/study-material', { batchId: forBatchId, size: 100 })
-      .then((res) => setItems(res.content))
+      .get<Page<StudyMaterial>>('/api/v1/study-material', { batchId: forBatchId, page: p, size: PAGE_SIZE })
+      .then((res) => {
+        // Last item on the page was deleted: step back one page (effect will refetch)
+        if (res.content.length === 0 && p > 0) {
+          setPage(p - 1)
+          return
+        }
+        setItems(res.content)
+        setPageMeta(res)
+      })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    if (batchId) load(batchId)
-  }, [batchId])
+    if (batchId) load(batchId, page)
+  }, [batchId, page])
 
   async function handleDownload(id: string) {
     const { url } = await api.get<DownloadUrlResponse>(`/api/v1/study-material/${id}/download-url`)
@@ -73,7 +84,14 @@ export function StudyMaterialPage() {
       ) : (
         <>
           <div className="mb-6 max-w-xs">
-            <Select label="Batch" value={batchId} onChange={(e) => setBatchId(e.target.value)}>
+            <Select
+              label="Batch"
+              value={batchId}
+              onChange={(e) => {
+                setBatchId(e.target.value)
+                setPage(0)
+              }}
+            >
               {batches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -95,35 +113,47 @@ export function StudyMaterialPage() {
               action={<Button onClick={() => setUploadOpen(true)}>Upload file</Button>}
             />
           ) : (
-            <div className="space-y-2">
-              {items.map((m) => (
-                <div key={m.id} className="border border-line rounded-lg bg-white p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-medium text-ink">{m.title}</p>
-                      {m.description && <p className="text-sm text-slate mt-1">{m.description}</p>}
-                      <p className="text-xs text-slate mt-1">
-                        {m.originalFilename} · {formatFileSize(m.fileSizeBytes)} · Uploaded {formatDate(m.createdAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 whitespace-nowrap">
-                      <button
-                        onClick={() => handleDownload(m.id)}
-                        className="text-sm text-slate hover:text-ink underline underline-offset-2"
-                      >
-                        Download
-                      </button>
-                      <button
-                        onClick={() => handleDelete(m.id)}
-                        className="text-sm text-danger hover:opacity-80 underline underline-offset-2"
-                      >
-                        Delete
-                      </button>
+            <>
+              <div className="space-y-2">
+                {items.map((m) => (
+                  <div key={m.id} className="border border-line rounded-lg bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-medium text-ink">{m.title}</p>
+                        {m.description && <p className="text-sm text-slate mt-1">{m.description}</p>}
+                        <p className="text-xs text-slate mt-1">
+                          {m.originalFilename} · {formatFileSize(m.fileSizeBytes)} · Uploaded {formatDate(m.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        <button
+                          onClick={() => handleDownload(m.id)}
+                          className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                        >
+                          Download
+                        </button>
+                        <button
+                          onClick={() => handleDelete(m.id)}
+                          className="text-sm text-danger hover:opacity-80 underline underline-offset-2"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {pageMeta && (
+                <Pagination
+                  page={pageMeta.number}
+                  totalPages={pageMeta.totalPages}
+                  totalElements={pageMeta.totalElements}
+                  size={pageMeta.size}
+                  onChange={setPage}
+                />
+              )}
+            </>
           )}
         </>
       )}
