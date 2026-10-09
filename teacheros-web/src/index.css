@@ -6,19 +6,37 @@
 
   --color-ink: #1C2541;
   --color-ink-light: #2A3659;
+  --color-ink-deep: #111830;
   --color-chalk: #F2B705;
+  --color-chalk-deep: #C99700;
   --color-chalk-soft: #FDF3D8;
   --color-paper: #FBF9F4;
   --color-paper-dim: #F2EFE6;
   --color-slate: #5C6784;
   --color-slate-light: #8891A8;
-  --color-line: #E4E0D4;
+  --color-line: #E8E4D8;
   --color-success: #2F9E5B;
   --color-success-soft: #E4F5EA;
   --color-danger: #D64545;
   --color-danger-soft: #FBE7E7;
   --color-warn: #B8860B;
   --color-warn-soft: #FBF0D9;
+
+  /* Fixed navy: used by the sidebar and login panel. These stay dark in
+     both modes, while `ink` flips to a light colour in dark mode. */
+  --color-navy: #1C2541;
+  --color-navy-deep: #111830;
+  --color-navy-light: #2A3659;
+
+  /* Softer, rounder surfaces. Overriding the theme tokens restyles every
+     existing rounded-md / rounded-lg / shadow-sm / shadow-md in the app
+     without touching each page. */
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --shadow-sm: 0 1px 2px rgb(28 37 65 / 0.04), 0 1px 3px rgb(28 37 65 / 0.06);
+  --shadow-md: 0 8px 20px -6px rgb(28 37 65 / 0.12), 0 2px 6px -2px rgb(28 37 65 / 0.06);
+  --shadow-xl: 0 28px 56px -14px rgb(28 37 65 / 0.3);
 }
 
 body {
@@ -36,55 +54,47 @@ body {
   outline-color: var(--color-chalk);
 }
 
-/* Shared motion primitives - used by components/ui.tsx (modal, skeletons),
-   components/Layout.tsx (route transitions, mobile menu), and
-   pages/Landing.tsx (scroll-reveal). Kept in one place so the app has one
-   consistent animation "feel" instead of every component inventing its
-   own timing. All durations intentionally short (150-220ms) - this is a
-   data-entry app, not a showcase site; motion should confirm an action
-   happened, not make the person wait for it.
+/* ---------- Keyframes ---------- */
 
-   Respects prefers-reduced-motion globally, once, here - individual
-   components don't need their own media query. */
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.96) translateY(4px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
-
 @keyframes scale-out {
   from { opacity: 1; transform: scale(1) translateY(0); }
   to { opacity: 0; transform: scale(0.96) translateY(4px); }
 }
-
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes reveal-up {
   from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
-@keyframes slide-in-left {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
+@keyframes slide-in-left { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes slide-out-left { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
-
-@keyframes slide-out-left {
-  from { transform: translateX(0); }
-  to { transform: translateX(-100%); }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes grow-y {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes draw-line {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(24px, -18px) scale(1.08); }
 }
 
 .animate-fade-in { animation: fade-in 180ms ease-out both; }
@@ -94,26 +104,141 @@ body {
 .animate-slide-up { animation: slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-slide-in-left { animation: slide-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-slide-out-left { animation: slide-out-left 180ms ease-in both; }
+.animate-float { animation: float 4s ease-in-out infinite; }
+.animate-drift { animation: drift 14s ease-in-out infinite; }
+.animate-grow-y { transform-origin: bottom; animation: grow-y 700ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.animate-draw-line { stroke-dasharray: 1; animation: draw-line 1100ms cubic-bezier(0.4, 0, 0.2, 1) both; }
 
-/* Scroll-reveal for the landing page: starts hidden, Landing.tsx's
-   useReveal hook adds .is-visible via IntersectionObserver once a
-   section enters the viewport. Plain CSS + one small hook - no animation
-   library. */
-.reveal {
-  opacity: 0;
-  transform: translateY(24px);
+/* Loading placeholder: a soft moving highlight instead of a flat pulse. */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-paper-dim) 25%, #fff 50%, var(--color-paper-dim) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
-.reveal.is-visible {
-  animation: reveal-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+
+/* Scroll-reveal for the landing page. */
+.reveal { opacity: 0; transform: translateY(24px); }
+.reveal.is-visible { animation: reveal-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Subtle dotted texture for hero/auth panels. */
+.bg-dots {
+  background-image: radial-gradient(rgb(255 255 255 / 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
+
+/* ---------- App-wide polish (inside the app shell only) ----------
+   Existing pages build cards as `border rounded-lg bg-white`. These rules
+   upgrade all of them at once: a resting shadow, a gentle hover state, and
+   a staggered entrance for card lists, stat grids and table rows.
+   `backwards` fill mode (not `both`) so finished animations don't pin a
+   transform and fight hover/active transforms on the children. */
+
+main .rounded-lg.bg-white.border {
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+main .rounded-lg.bg-white.border:hover {
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--color-chalk) 45%, var(--color-line));
+}
+
+main .space-y-2 > *,
+main .space-y-4 > *,
+main .grid > * {
+  animation: slide-up 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(1) { animation-delay: 0ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(2) { animation-delay: 50ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(3) { animation-delay: 100ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(4) { animation-delay: 150ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(5) { animation-delay: 200ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(6) { animation-delay: 250ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(7) { animation-delay: 300ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(8) { animation-delay: 350ms; }
+main :is(.space-y-2, .space-y-4, .grid) > :nth-child(n + 9) { animation-delay: 400ms; }
+
+main tbody > tr { animation: fade-in 400ms ease-out backwards; }
+main tbody > tr:nth-child(1) { animation-delay: 0ms; }
+main tbody > tr:nth-child(2) { animation-delay: 40ms; }
+main tbody > tr:nth-child(3) { animation-delay: 80ms; }
+main tbody > tr:nth-child(4) { animation-delay: 120ms; }
+main tbody > tr:nth-child(5) { animation-delay: 160ms; }
+main tbody > tr:nth-child(6) { animation-delay: 200ms; }
+main tbody > tr:nth-child(n + 7) { animation-delay: 240ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in, .animate-fade-out, .animate-scale-in, .animate-scale-out,
-  .animate-slide-up, .animate-slide-in-left, .animate-slide-out-left, .reveal.is-visible {
+  .animate-slide-up, .animate-slide-in-left, .animate-slide-out-left,
+  .animate-float, .animate-drift, .animate-grow-y, .animate-draw-line,
+  .skeleton, .reveal.is-visible,
+  main .space-y-2 > *, main .space-y-4 > *, main .grid > *, main tbody > tr {
     animation: none !important;
   }
-  .reveal {
-    opacity: 1;
-    transform: none;
-  }
+  .animate-draw-line { stroke-dasharray: none; }
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ---------- Dark mode ----------
+   Dark mode flips the same colour tokens every page already uses
+   (ink/paper/slate/line/...), so no page needs its own dark: classes.
+   `bg-white` is remapped to a raised surface colour. `text-white` and
+   `bg-white/10` are left alone, so overlays and buttons still work. */
+
+:root {
+  --surface: #ffffff;
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --surface: #151D33;
+
+  --color-ink: #E8ECF8;
+  --color-ink-light: #D3D9EC;
+  --color-ink-deep: #BFC8E2;
+  --color-paper: #0D1324;
+  --color-paper-dim: #182038;
+  --color-slate: #9AA5C4;
+  --color-slate-light: #6F7B9F;
+  --color-line: #28324F;
+
+  --color-chalk-soft: #2B2410;
+  --color-chalk-deep: #F5C531;
+
+  --color-success: #4CC77F;
+  --color-success-soft: #12301F;
+  --color-danger: #F26B6B;
+  --color-danger-soft: #3A1818;
+  --color-warn: #E5B13A;
+  --color-warn-soft: #33270C;
+
+  --color-navy: #0F1730;
+  --color-navy-deep: #0A1022;
+  --color-navy-light: #1A2447;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.25);
+  --shadow-md: 0 10px 24px -8px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.35);
+  --shadow-xl: 0 28px 56px -14px rgb(0 0 0 / 0.7);
+}
+
+.dark .bg-white { background-color: var(--surface); }
+.dark .from-white { --tw-gradient-from: var(--surface); }
+.dark .via-white { --tw-gradient-via: var(--surface); }
+.dark .to-white { --tw-gradient-to: var(--surface); }
+
+.dark .skeleton {
+  background: linear-gradient(90deg, var(--color-paper-dim) 25%, #232D4A 50%, var(--color-paper-dim) 75%);
+  background-size: 200% 100%;
+}
+
+/* Smooth cross-fade when toggling (class is added for ~350ms by lib/theme.ts). */
+html.theme-fade,
+html.theme-fade *,
+html.theme-fade *::before,
+html.theme-fade *::after {
+  transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, fill 300ms ease,
+    stroke 300ms ease, box-shadow 300ms ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.theme-fade, html.theme-fade * { transition: none !important; }
 }
