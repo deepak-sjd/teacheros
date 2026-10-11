@@ -11,3 +11,11 @@ logging:
 app:
   otp:
     delivery-mode: log
+  sms:
+    provider: log
+  email:
+    provider: log
+  payment:
+    provider: mock
+  ai:
+    provider: log

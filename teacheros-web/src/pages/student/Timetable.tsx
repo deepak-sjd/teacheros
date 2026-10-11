@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
+import { JoinClassLink } from '@/components/JoinClassLink'
 import { EmptyState, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
 import { isSlotLiveNow, MEETING_PLATFORM_LABELS } from '@/lib/format'
@@ -11,16 +12,14 @@ function JoinButton({ slot }: { slot: TimetableSlot }) {
   if (!slot.meetingLink) return null
   const live = isSlotLiveNow(slot.dayOfWeek, slot.startTime, slot.endTime)
   return (
-    <a
-      href={slot.meetingLink}
-      target="_blank"
-      rel="noopener noreferrer"
+    <JoinClassLink
+      slot={slot}
       className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium transition-colors ${
         live ? 'bg-success text-white hover:opacity-90' : 'bg-paper-dim text-slate hover:text-ink'
       }`}
     >
       {live ? '● Join now' : `${MEETING_PLATFORM_LABELS[slot.meetingPlatform ?? 'OTHER']} link`}
-    </a>
+    </JoinClassLink>
   )
 }
 

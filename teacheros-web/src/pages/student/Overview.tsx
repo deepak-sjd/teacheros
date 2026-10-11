@@ -4,6 +4,7 @@ import { StatBlock, StatBlockSkeleton, EmptyState, Skeleton } from '@/components
 import { StudyPlanCard } from '@/components/StudyPlanCard'
 import { api } from '@/lib/api'
 import { BarChart } from '@/components/Charts'
+import { JoinClassLink } from '@/components/JoinClassLink'
 import { formatCurrency, formatDate, isSlotLiveNow, MEETING_PLATFORM_LABELS, todayIso } from '@/lib/format'
 import type {
   AppNotification,
@@ -21,7 +22,7 @@ import type {
 const DAY_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 // ISO's Date.getDay() is 0=Sun..6=Sat; TimetableSlot.dayOfWeek is 1=Mon..7=Sun
-// (see TimetableSlot's own comment in types.ts) - this converts one to the
+// (see TimetableSlot's own comment in types/timetable.ts) - this converts one to the
 // other rather than duplicating that convention decision here.
 function todayDayOfWeek(): number {
   const jsDay = new Date().getDay()
@@ -163,10 +164,8 @@ function OverviewPanel({ student }: { student: Student }) {
                   </p>
                 </div>
                 {slot.meetingLink && (
-                  <a
-                    href={slot.meetingLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <JoinClassLink
+                    slot={slot}
                     className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                       live
                         ? 'bg-ink text-paper hover:bg-ink-light'
@@ -174,7 +173,7 @@ function OverviewPanel({ student }: { student: Student }) {
                     }`}
                   >
                     {live ? 'Join now' : `${MEETING_PLATFORM_LABELS[slot.meetingPlatform ?? 'OTHER']} link`}
-                  </a>
+                  </JoinClassLink>
                 )}
               </div>
             )

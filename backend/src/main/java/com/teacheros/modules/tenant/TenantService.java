@@ -4,6 +4,7 @@ import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.storage.StorageService;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.tenant.dto.TenantDtos.TenantConfigResponse;
 import com.teacheros.modules.tenant.dto.TenantDtos.TenantSettingsResponse;
 import com.teacheros.modules.tenant.dto.TenantDtos.UpdateTenantRequest;
 import org.springframework.http.HttpStatus;
@@ -26,12 +27,14 @@ public class TenantService {
     private final TenantRepository tenantRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final StorageService storageService;
+    private final TenantConfigService tenantConfigService;
 
     public TenantService(TenantRepository tenantRepository, CurrentTenantProvider currentTenantProvider,
-            StorageService storageService) {
+            StorageService storageService, TenantConfigService tenantConfigService) {
         this.tenantRepository = tenantRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.storageService = storageService;
+        this.tenantConfigService = tenantConfigService;
     }
 
     public TenantSettingsResponse getSettings() {
@@ -94,6 +97,9 @@ public class TenantService {
         String logoUrl = tenant.getLogoObjectKey() == null
                 ? null
                 : storageService.generateDownloadUrl(tenant.getLogoObjectKey());
-        return new TenantSettingsResponse(tenant.getId(), tenant.getName(), logoUrl);
+        TenantConfigResponse config = tenantConfigService.getFor(tenant.getId());
+        return new TenantSettingsResponse(tenant.getId(), tenant.getName(), tenant.getSlug(), logoUrl,
+                config.tenantType(),
+                config.enabledModules());
     }
 }

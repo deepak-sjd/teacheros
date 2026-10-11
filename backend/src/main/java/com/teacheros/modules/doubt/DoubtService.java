@@ -3,6 +3,8 @@ package com.teacheros.modules.doubt;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.ai.AiFeature;
+import com.teacheros.modules.ai.AiUsageService;
 import com.teacheros.modules.doubt.AiTutorClient.AiTutorException;
 import com.teacheros.modules.doubt.AiTutorClient.Turn;
 import com.teacheros.modules.doubt.dto.DoubtDtos.AskDoubtRequest;
@@ -37,6 +39,10 @@ import java.util.UUID;
  * parent can still open the thread to see what their child has been
  * asking, the same read-only relationship STUDENT has to the PARENT-sent
  * message thread in MessageService, just mirrored.
+ *
+ * Two independent limits apply to #ask: the per-student daily cap below
+ * (product-facing fairness), and the per-tenant daily cap enforced by
+ * AiUsageService (provider-cost protection, shared by every AI feature).
  */
 @Service
 public class DoubtService {
@@ -57,6 +63,7 @@ public class DoubtService {
     private final StudentRepository studentRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final AiTutorClient aiTutorClient;
+    private final AiUsageService aiUsageService;
     private final int dailyQuestionLimit;
 
     public DoubtService(
@@ -65,12 +72,14 @@ public class DoubtService {
             StudentRepository studentRepository,
             CurrentTenantProvider currentTenantProvider,
             AiTutorClient aiTutorClient,
+            AiUsageService aiUsageService,
             @Value("${app.ai.daily-question-limit:30}") int dailyQuestionLimit) {
         this.doubtMessageRepository = doubtMessageRepository;
         this.studentAccessGuard = studentAccessGuard;
         this.studentRepository = studentRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.aiTutorClient = aiTutorClient;
+        this.aiUsageService = aiUsageService;
         this.dailyQuestionLimit = dailyQuestionLimit;
     }
 
@@ -125,7 +134,12 @@ public class DoubtService {
 
         String answerText;
         try {
-            answerText = aiTutorClient.answer(student.getGrade(), history, request.question());
+            // Tenant-wide daily limit + ai_usage row. If the tenant is over its limit this
+            // throws a 429 ApiException (NOT an AiTutorException), which escapes this try
+            // block and rolls back the question saved just above - a blocked question
+            // never shows up in the thread or counts toward the student's own limit.
+            answerText = aiUsageService.track(AiFeature.DOUBT,
+                    () -> aiTutorClient.answer(student.getGrade(), history, request.question()));
         } catch (AiTutorException e) {
             // The student's question is already saved regardless - losing
             // the AI reply must never lose their question too. They see a

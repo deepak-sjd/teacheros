@@ -104,6 +104,23 @@ public interface MarkRepository extends JpaRepository<Mark, UUID> {
     List<SubjectScoreRow> findSubjectScoresForStudent(
             @Param("tenantId") UUID tenantId, @Param("studentId") UUID studentId);
 
+    /**
+     * One student's graded scores for tests dated inside [from, to] - the
+     * per-term slice of findSubjectScoresForStudent, used by ReportCardService.
+     */
+    @Query("""
+            SELECT a.subject AS assessmentSubject, b.subject AS batchSubject,
+                   m.marksObtained AS marksObtained, a.maxMarks AS maxMarks
+            FROM Mark m
+            JOIN Assessment a ON a.id = m.testId
+            JOIN Batch b ON b.id = a.batchId
+            WHERE m.tenantId = :tenantId AND m.studentId = :studentId AND m.marksObtained IS NOT NULL
+            AND a.testDate BETWEEN :from AND :to
+            """)
+    List<SubjectScoreRow> findSubjectScoresForStudentInRange(
+            @Param("tenantId") UUID tenantId, @Param("studentId") UUID studentId,
+            @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     interface MarkScore {
         BigDecimal getMarksObtained();
 

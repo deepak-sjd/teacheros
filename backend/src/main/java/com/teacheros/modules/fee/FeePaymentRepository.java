@@ -7,10 +7,13 @@ import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface FeePaymentRepository extends JpaRepository<FeePayment, UUID> {
     List<FeePayment> findByTenantIdAndFeeId(UUID tenantId, UUID feeId);
+
+    Optional<FeePayment> findByIdAndTenantId(UUID id, UUID tenantId);
 
     boolean existsByTenantIdAndGatewayPaymentId(UUID tenantId, String gatewayPaymentId);
 

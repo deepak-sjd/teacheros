@@ -42,6 +42,7 @@ export function TestsPage() {
   const [viewingResults, setViewingResults] = useState<Assessment | null>(null)
   const [page, setPage] = useState(0)
   const [pageMeta, setPageMeta] = useState<Page<Assessment> | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -74,7 +75,24 @@ export function TestsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this test and all its marks? This cannot be undone.')) return
-    await api.del(`/api/v1/tests/${id}`)
+    setDeleteError(null)
+    try {
+      await api.del(`/api/v1/tests/${id}`)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // TEST_HAS_SUBMISSIONS - students already submitted; the server message says how many.
+        if (!confirm(`${err.message}\n\nDelete this test anyway?`)) return
+        try {
+          await api.del(`/api/v1/tests/${id}?confirm=true`)
+        } catch (err2) {
+          setDeleteError(err2 instanceof ApiError ? err2.message : 'Could not delete this test.')
+          return
+        }
+      } else {
+        setDeleteError(err instanceof ApiError ? err.message : 'Could not delete this test.')
+        return
+      }
+    }
     load(batchId)
   }
 
@@ -103,6 +121,8 @@ export function TestsPage() {
         description="Create a test for a batch, then grade every student in one sitting."
         action={batches.length > 0 ? <Button onClick={() => setCreateOpen(true)}>New test</Button> : undefined}
       />
+
+      {deleteError && <ErrorBanner message={deleteError} />}
 
       {batches.length === 0 ? (
         <EmptyState title="No batches yet" description="Create a batch first before adding a test." />

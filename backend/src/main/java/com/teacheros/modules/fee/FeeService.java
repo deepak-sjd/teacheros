@@ -3,6 +3,8 @@ package com.teacheros.modules.fee;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.audit.AuditActions;
+import com.teacheros.modules.audit.AuditService;
 import com.teacheros.modules.fee.dto.FeeDtos.CreateFeeRequest;
 import com.teacheros.modules.fee.dto.FeeDtos.FeeResponse;
 import com.teacheros.modules.fee.dto.FeeDtos.RecordPaymentRequest;
@@ -28,6 +30,8 @@ import java.util.UUID;
  * OVERDUE rule: unpaid balance and dueDate < today (Asia/Kolkata). It is
  * applied in deriveStatus (create/payment), by FeeOverdueScheduler (daily),
  * and by a tenant-scoped sweep at the top of listPending.
+ *
+ * Fee creation and every payment (manual or gateway) write an audit_log row.
  */
 @Service
 public class FeeService {
@@ -38,13 +42,16 @@ public class FeeService {
     private final FeePaymentRepository feePaymentRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final StudentAccessGuard studentAccessGuard;
+    private final AuditService auditService;
 
     public FeeService(FeeRepository feeRepository, FeePaymentRepository feePaymentRepository,
-            CurrentTenantProvider currentTenantProvider, StudentAccessGuard studentAccessGuard) {
+            CurrentTenantProvider currentTenantProvider, StudentAccessGuard studentAccessGuard,
+            AuditService auditService) {
         this.feeRepository = feeRepository;
         this.feePaymentRepository = feePaymentRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.studentAccessGuard = studentAccessGuard;
+        this.auditService = auditService;
     }
 
     /**
@@ -61,6 +68,13 @@ public class FeeService {
         // A fee created with an already-past due date is overdue immediately.
         fee.setStatus(deriveStatus(request.amountDue(), BigDecimal.ZERO, request.dueDate()));
         fee = feeRepository.save(fee);
+
+        auditService.record(AuditActions.FEE_CREATED, AuditActions.FEE, fee.getId(), AuditService.meta(
+                "studentId", fee.getStudentId(),
+                "amountDue", fee.getAmountDue(),
+                "dueDate", fee.getDueDate(),
+                "status", fee.getStatus()));
+
         return toResponse(fee, BigDecimal.ZERO);
     }
 
@@ -80,21 +94,39 @@ public class FeeService {
         fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid, fee.getDueDate()));
         fee = feeRepository.save(fee);
 
+        auditService.record(AuditActions.FEE_PAYMENT_RECORDED, AuditActions.FEE, fee.getId(), AuditService.meta(
+                "studentId", fee.getStudentId(),
+                "amountPaid", request.amountPaid(),
+                "method", request.method(),
+                "source", "manual",
+                "resultingStatus", fee.getStatus()));
+
         return toResponse(fee, totalPaid);
     }
 
     /**
      * Called by PaymentService after Razorpay's signature check passes.
-     * Separate from recordPayment (the staff-manual-entry path) because
-     * this one is idempotent: Razorpay's checkout can call the success
-     * callback more than once for the same payment (retries, double-taps),
-     * and recording the same gatewayPaymentId twice would double-credit
-     * the fee.
+     * Idempotent on gatewayPaymentId (see recordGatewayPaymentForTenant).
      */
     @Transactional
     public FeeResponse recordGatewayPayment(UUID feeId, BigDecimal amountPaid, String method,
             String gatewayOrderId, String gatewayPaymentId) {
-        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        return recordGatewayPaymentForTenant(currentTenantProvider.getCurrentTenantId(), feeId, amountPaid,
+                method, gatewayOrderId, gatewayPaymentId);
+    }
+
+    /**
+     * Same as above but with an explicit tenant - ONLY for the Razorpay
+     * webhook, which has no JWT. The tenant must come from the stored
+     * PaymentOrder row, never from the request.
+     *
+     * Idempotent: Razorpay's checkout can call the success callback more
+     * than once for the same payment (retries, double-taps), and recording
+     * the same gatewayPaymentId twice would double-credit the fee.
+     */
+    @Transactional
+    public FeeResponse recordGatewayPaymentForTenant(UUID tenantId, UUID feeId, BigDecimal amountPaid,
+            String method, String gatewayOrderId, String gatewayPaymentId) {
         Fee fee = feeRepository.findByIdAndTenantId(feeId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Fee", feeId));
 
@@ -102,6 +134,7 @@ public class FeeService {
             // Already recorded from an earlier callback - return the
             // current state rather than erroring, so a retried callback
             // still gets a clean 200 instead of a confusing failure.
+            // (No second audit row - nothing new happened.)
             return toResponse(fee, sumPayments(tenantId, fee.getId()));
         }
 
@@ -113,6 +146,15 @@ public class FeeService {
         BigDecimal totalPaid = sumPayments(tenantId, fee.getId());
         fee.setStatus(deriveStatus(fee.getAmountDue(), totalPaid, fee.getDueDate()));
         fee = feeRepository.save(fee);
+
+        auditService.record(AuditActions.FEE_PAYMENT_RECORDED, AuditActions.FEE, fee.getId(), AuditService.meta(
+                "studentId", fee.getStudentId(),
+                "amountPaid", amountPaid,
+                "method", method,
+                "source", "gateway",
+                "gatewayOrderId", gatewayOrderId,
+                "gatewayPaymentId", gatewayPaymentId,
+                "resultingStatus", fee.getStatus()));
 
         return toResponse(fee, totalPaid);
     }

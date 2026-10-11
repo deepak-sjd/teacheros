@@ -116,6 +116,7 @@ function SchoolSection() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   function load() {
     setLoading(true)
@@ -176,6 +177,19 @@ function SchoolSection() {
 
   if (loading) return <p className="text-slate text-sm">Loading…</p>
 
+  const publicUrl = tenant?.slug ? `${window.location.origin}/courses?school=${tenant.slug}` : null
+
+  async function copyPublicUrl() {
+    if (!publicUrl) return
+    try {
+      await navigator.clipboard.writeText(publicUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      /* clipboard unavailable - the link stays visible to copy by hand */
+    }
+  }
+
   return (
     <section className="pt-10 border-t border-line">
       <h2 className="font-display text-xl text-ink mb-1">School settings</h2>
@@ -220,6 +234,21 @@ function SchoolSection() {
         </div>
         <p className="text-xs text-slate-light mt-2">PNG, JPEG, or WebP.</p>
       </div>
+
+      {publicUrl && (
+        <div className="mb-6">
+          <span className="block text-sm font-medium text-ink mb-1.5">Public course page</span>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 min-w-0 truncate rounded-lg border border-line bg-paper-dim px-3 py-2 text-xs text-slate">
+              {publicUrl}
+            </code>
+            <Button type="button" variant="secondary" onClick={copyPublicUrl}>
+              {copied ? 'Copied' : 'Copy link'}
+            </Button>
+          </div>
+          <p className="text-xs text-slate-light mt-1.5">Share this link so visitors can browse your published courses.</p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="School / coaching center name" value={name} onChange={(e) => setName(e.target.value)} required />

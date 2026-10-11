@@ -11,7 +11,10 @@ public final class AttendancePercentageCalculator {
     }
 
     /**
-     * @param recordedSessions total non-cancelled sessions with an attendance record
+     * @param recordedSessions total non-cancelled, non-EXCUSED sessions with an
+     *                         attendance record (excused sessions are left out
+     *                         by the repository queries, so they never lower
+     *                         the percentage)
      * @param attendedSessions of those, how many were PRESENT or LATE
      * @return percentage rounded to 1 decimal place; 0.0 if no sessions recorded
      *         (never divides by zero, never returns NaN)

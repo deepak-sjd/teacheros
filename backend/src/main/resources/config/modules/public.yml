@@ -1,0 +1,7 @@
+# Module: public (unauthenticated endpoints, e.g. enquiry form).
+app:
+  public:
+    enquiry:
+      max-per-window: ${PUBLIC_ENQUIRY_MAX_PER_WINDOW:5}
+      window-minutes: ${PUBLIC_ENQUIRY_WINDOW_MINUTES:10}
+      duplicate-window-hours: ${PUBLIC_ENQUIRY_DEDUPE_HOURS:24}

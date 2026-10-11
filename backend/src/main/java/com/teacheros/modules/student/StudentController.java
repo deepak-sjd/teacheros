@@ -5,6 +5,7 @@ import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
 import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -46,13 +47,27 @@ public class StudentController {
     }
 
     // Default sort (name, then id as a tiebreaker) keeps page boundaries
-    // stable between requests.
+    // stable between requests. When a search term is given, the query in
+    // StudentRepository#search fixes its own ordering, so any sort on the
+    // Pageable is dropped (page number and size are kept).
     @GetMapping
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('STUDENTS_VIEW')")
     public ResponseEntity<Page<StudentResponse>> list(
             @RequestParam(required = false) UUID batchId,
+            @RequestParam(required = false) String search,
             @PageableDefault(size = 20, sort = { "fullName", "id" }) Pageable pageable) {
-        return ResponseEntity.ok(studentService.list(batchId, pageable));
+        Pageable effective = (search != null && !search.isBlank())
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
+                : pageable;
+        return ResponseEntity.ok(studentService.list(batchId, search, effective));
+    }
+
+    // Resolves a set of IDs to student records (names for a page of fees,
+    // etc.). Literal path, so it never collides with /{id}.
+    @GetMapping("/lookup")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<List<StudentResponse>> lookup(@RequestParam List<UUID> ids) {
+        return ResponseEntity.ok(studentService.lookup(ids));
     }
 
     // No @PreAuthorize restricting this one to staff roles - PARENT and

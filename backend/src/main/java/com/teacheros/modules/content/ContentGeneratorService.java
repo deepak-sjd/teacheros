@@ -1,6 +1,8 @@
 package com.teacheros.modules.content;
 
 import com.teacheros.common.exception.ApiException;
+import com.teacheros.modules.ai.AiFeature;
+import com.teacheros.modules.ai.AiUsageService;
 import com.teacheros.modules.content.dto.ContentGeneratorDtos.GenerateNotesRequest;
 import com.teacheros.modules.content.dto.ContentGeneratorDtos.GenerateNotesResponse;
 import com.teacheros.modules.content.dto.ContentGeneratorDtos.GenerateQuestionsRequest;
@@ -28,15 +30,19 @@ import java.util.List;
  * endpoint; notes text is handed back to be reviewed/edited and then
  * uploaded via the existing study-material upload endpoint as a plain-
  * text file. This service only drafts - it never writes to the database
- * or to storage.
+ * or to storage (apart from the ai_usage ledger row AiUsageService writes).
+ *
+ * Every provider call goes through AiUsageService (per-tenant daily limit).
  */
 @Service
 public class ContentGeneratorService {
 
     private final AiTutorClient aiTutorClient;
+    private final AiUsageService aiUsageService;
 
-    public ContentGeneratorService(AiTutorClient aiTutorClient) {
+    public ContentGeneratorService(AiTutorClient aiTutorClient, AiUsageService aiUsageService) {
         this.aiTutorClient = aiTutorClient;
+        this.aiUsageService = aiUsageService;
     }
 
     public GenerateQuestionsResponse generateQuestions(GenerateQuestionsRequest request) {
@@ -51,8 +57,11 @@ public class ContentGeneratorService {
 
         List<GeneratedQuestion> drafts;
         try {
-            drafts = aiTutorClient.generateQuestions(request.subject(), request.topic(), request.grade(),
-                    difficulty, count);
+            // A tenant over its daily limit gets a 429 ApiException from track(),
+            // which is not an AiTutorException and so passes straight through.
+            drafts = aiUsageService.track(AiFeature.CONTENT_QUESTIONS,
+                    () -> aiTutorClient.generateQuestions(request.subject(), request.topic(), request.grade(),
+                            difficulty, count));
         } catch (AiTutorException e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "AI_GENERATION_FAILED",
                     "Could not generate questions right now. Please try again in a moment.");
@@ -73,7 +82,8 @@ public class ContentGeneratorService {
     public GenerateNotesResponse generateNotes(GenerateNotesRequest request) {
         String notes;
         try {
-            notes = aiTutorClient.generateNotes(request.subject(), request.topic(), request.grade());
+            notes = aiUsageService.track(AiFeature.CONTENT_NOTES,
+                    () -> aiTutorClient.generateNotes(request.subject(), request.topic(), request.grade()));
         } catch (AiTutorException e) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "AI_GENERATION_FAILED",
                     "Could not generate notes right now. Please try again in a moment.");

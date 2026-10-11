@@ -24,12 +24,13 @@ public class ReportController {
         this.reportPdfService = reportPdfService;
     }
 
-    // Staff-only, like every other management-facing endpoint in this app
-    // (Alerts, Fees, Assessment grading) - reports summarize the whole
-    // tenant/batch, not one student's own record, so PARENT/STUDENT access
-    // doesn't apply here the way it does for e.g. /fees/students/{id}.
+    // Permission-gated, like every other management-facing endpoint - reports
+    // summarize the whole tenant/batch, not one student's own record, so
+    // PARENT/STUDENT access doesn't apply here the way it does for e.g.
+    // /fees/students/{id}. NOTE: the summary includes aggregate marks figures;
+    // if an accountant must not see even aggregates, split REPORTS_VIEW.
     @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('REPORTS_VIEW')")
     public ResponseEntity<ReportSummaryResponse> summary(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -41,7 +42,7 @@ public class ReportController {
     // downloadable PDF instead of JSON. Generated on demand, same as the
     // JSON version; nothing is stored server-side.
     @GetMapping(value = "/summary.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('REPORTS_VIEW')")
     public ResponseEntity<byte[]> summaryPdf(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,

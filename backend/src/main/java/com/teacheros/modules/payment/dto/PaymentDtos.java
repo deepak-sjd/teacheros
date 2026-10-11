@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public class PaymentDtos {
@@ -38,5 +40,26 @@ public class PaymentDtos {
             // doesn't check it, there's nothing to forge since no real
             // money or real Razorpay order is involved.
             String signature) {
+    }
+
+    /**
+     * One line in a reconciliation list. paymentId is null for an order with no
+     * payment.
+     */
+    public record ReconciliationItem(
+            UUID feeId,
+            String gatewayOrderId,
+            String gatewayPaymentId,
+            BigDecimal amount,
+            Instant at) {
+    }
+
+    public record ReconciliationResponse(
+            // Order marked PAID, but no fee_payments row exists for it.
+            List<ReconciliationItem> paidNotRecorded,
+            // A gateway fee_payments row whose order is missing or not PAID.
+            List<ReconciliationItem> recordedNotPaid,
+            // Orders still CREATED after an hour - customer may have paid; check Razorpay.
+            List<ReconciliationItem> staleCreated) {
     }
 }

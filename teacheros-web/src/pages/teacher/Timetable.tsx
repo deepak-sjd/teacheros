@@ -4,6 +4,7 @@ import type { Batch, MeetingPlatform, Page } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton } from '@/components/ui'
 import { MEETING_PLATFORM_LABELS } from '@/lib/format'
+import { SlotJoinsModal } from '@/components/SlotJoinsModal'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MEETING_PLATFORMS: MeetingPlatform[] = ['ZOOM', 'GOOGLE_MEET', 'MICROSOFT_TEAMS', 'OTHER']
@@ -26,6 +27,7 @@ export function TimetablePage() {
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [linkSlot, setLinkSlot] = useState<Slot | null>(null)
+  const [joinsSlot, setJoinsSlot] = useState<Slot | null>(null)
 
   useEffect(() => {
     api.get<Page<Batch>>('/api/v1/batches', { size: 100 }).then((res) => {
@@ -117,6 +119,9 @@ export function TimetablePage() {
                           <button onClick={() => setLinkSlot(slot)} className="text-slate hover:text-ink hover:underline">
                             {slot.meetingLink ? 'Edit link' : 'Add link'}
                           </button>
+                          <button onClick={() => setJoinsSlot(slot)} className="text-slate hover:text-ink hover:underline">
+                            Who joined
+                          </button>
                           <button onClick={() => handleDelete(slot.id)} className="text-danger hover:underline">
                             Remove
                           </button>
@@ -150,6 +155,8 @@ export function TimetablePage() {
           load(batchId)
         }}
       />
+
+      <SlotJoinsModal slot={joinsSlot} onClose={() => setJoinsSlot(null)} />
     </Layout>
   )
 }

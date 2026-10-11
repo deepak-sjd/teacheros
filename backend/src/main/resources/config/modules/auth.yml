@@ -1,0 +1,13 @@
+# Module: auth (JWT + phone-OTP login). Owned by the auth module.
+app:
+  jwt:
+    # Overridden per environment - never commit a real secret.
+    secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
+    access-token-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
+    refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
+  otp:
+    ttl-minutes: ${OTP_TTL_MINUTES:5}
+    # "log" prints the OTP to the application log instead of sending an SMS -
+    # used only in dev/test so nobody needs a real SMS provider to develop locally.
+    # "sms" sends via Twilio - requires app.sms.twilio.* (see notifications.yml).
+    delivery-mode: ${OTP_DELIVERY_MODE:log}

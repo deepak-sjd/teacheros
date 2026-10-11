@@ -5,6 +5,7 @@ import { Button, EmptyState, ErrorBanner, Ledger, Row, Cell, StatBlock, StatBloc
 import { api, ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
+import { TermResults } from '@/components/TermResults'
 import type { Assessment, MyAttemptResponse, Page, Student, StudentMarkHistoryEntry, StudentRank } from '@/lib/types'
 
 interface OnlineTestRow {
@@ -173,6 +174,7 @@ export function StudentTests() {
       {(student) => (
         <>
           {role === 'STUDENT' && <OnlineTestsSection student={student} />}
+          <TermResults studentId={student.id} />
           <MarksList student={student} />
         </>
       )}

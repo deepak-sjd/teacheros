@@ -1,3 +1,7 @@
+# NOTE: this file is for LOCAL DEVELOPMENT ONLY. The backend service below runs the
+# 'dev' profile with dev credentials on purpose. For production, run with
+# SPRING_PROFILES_ACTIVE=prod and real secrets from your secret manager - the app
+# refuses to start in prod with the dev defaults (see ProductionConfigValidator).
 services:
   postgres:
     image: postgres:16-alpine
@@ -56,6 +60,7 @@ services:
       DB_USERNAME: teacheros
       DB_PASSWORD: teacheros
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-dev-only-secret-change-me}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       STORAGE_ENDPOINT: http://minio:9000
       STORAGE_ACCESS_KEY: teacheros
       STORAGE_SECRET_KEY: teacheros123

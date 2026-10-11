@@ -3,6 +3,7 @@ package com.teacheros.modules.auth;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.security.JwtService;
 import com.teacheros.modules.auth.dto.TokenResponse;
+import com.teacheros.modules.permission.PermissionService;
 import com.teacheros.modules.student.Student;
 import com.teacheros.modules.student.StudentRepository;
 import com.teacheros.modules.tenant.Tenant;
@@ -57,6 +58,7 @@ public class AuthService {
     private final StudentRepository studentRepository;
     private final OtpSender otpSender;
     private final JwtService jwtService;
+    private final PermissionService permissionService;
     private final int otpTtlMinutes;
     private final int accessTokenTtlMinutes;
     private final int refreshTokenTtlDays;
@@ -69,6 +71,7 @@ public class AuthService {
             StudentRepository studentRepository,
             OtpSender otpSender,
             JwtService jwtService,
+            PermissionService permissionService,
             @Value("${app.otp.ttl-minutes}") int otpTtlMinutes,
             @Value("${app.jwt.access-token-ttl-minutes}") int accessTokenTtlMinutes,
             @Value("${app.jwt.refresh-token-ttl-days}") int refreshTokenTtlDays) {
@@ -79,6 +82,7 @@ public class AuthService {
         this.studentRepository = studentRepository;
         this.otpSender = otpSender;
         this.jwtService = jwtService;
+        this.permissionService = permissionService;
         this.otpTtlMinutes = otpTtlMinutes;
         this.accessTokenTtlMinutes = accessTokenTtlMinutes;
         this.refreshTokenTtlDays = refreshTokenTtlDays;
@@ -185,6 +189,10 @@ public class AuthService {
         }
 
         Tenant tenant = tenantRepository.save(new Tenant(tenantName));
+        // Every tenant gets its own copy of the default role->permission
+        // matrix (V100). Same transaction as the tenant insert, so a tenant
+        // can never exist without permission rows.
+        permissionService.seedDefaults(tenant.getId());
         User user = new User(tenant.getId(), phoneNumber, displayName, Role.OWNER);
         return userRepository.save(user);
     }

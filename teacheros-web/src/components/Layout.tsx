@@ -3,94 +3,12 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import { Avatar } from '@/components/ui'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { navItemsForRole } from '@/lib/nav/registry'
+import { DEFAULT_NAV_ICON } from '@/lib/nav/types'
+import { useTenantBrand } from '@/lib/tenantBrand'
 
-interface NavItem {
-  to: string
-  label: string
-}
-
-const NAV_BY_ROLE: Record<string, NavItem[]> = {
-  OWNER: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/batches', label: 'Batches' },
-    { to: '/app/students', label: 'Students' },
-    { to: '/app/attendance', label: 'Attendance' },
-    { to: '/app/homework', label: 'Homework' },
-    { to: '/app/timetable', label: 'Timetable' },
-    { to: '/app/study-material', label: 'Study Material' },
-    { to: '/app/tests', label: 'Tests' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/analytics', label: 'Analytics' },
-    { to: '/app/reports', label: 'Reports' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-  ADMIN: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/batches', label: 'Batches' },
-    { to: '/app/students', label: 'Students' },
-    { to: '/app/attendance', label: 'Attendance' },
-    { to: '/app/homework', label: 'Homework' },
-    { to: '/app/timetable', label: 'Timetable' },
-    { to: '/app/study-material', label: 'Study Material' },
-    { to: '/app/tests', label: 'Tests' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/analytics', label: 'Analytics' },
-    { to: '/app/reports', label: 'Reports' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-  TEACHER: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/batches', label: 'Batches' },
-    { to: '/app/students', label: 'Students' },
-    { to: '/app/attendance', label: 'Attendance' },
-    { to: '/app/homework', label: 'Homework' },
-    { to: '/app/timetable', label: 'Timetable' },
-    { to: '/app/study-material', label: 'Study Material' },
-    { to: '/app/tests', label: 'Tests' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/analytics', label: 'Analytics' },
-    { to: '/app/reports', label: 'Reports' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-  STAFF: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/students', label: 'Students' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/analytics', label: 'Analytics' },
-    { to: '/app/reports', label: 'Reports' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-  PARENT: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/timetable', label: 'Timetable' },
-    { to: '/app/homework', label: 'Homework' },
-    { to: '/app/study-material', label: 'Study Material' },
-    { to: '/app/tests', label: 'Tests & Marks' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/doubts', label: 'Ask Doubt' },
-    { to: '/app/messages', label: 'Messages' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-  STUDENT: [
-    { to: '/app', label: 'Overview' },
-    { to: '/app/checkin', label: 'Check In' },
-    { to: '/app/timetable', label: 'Timetable' },
-    { to: '/app/homework', label: 'Homework' },
-    { to: '/app/study-material', label: 'Study Material' },
-    { to: '/app/tests', label: 'Tests & Marks' },
-    { to: '/app/take-test', label: 'Take Test' },
-    { to: '/app/fees', label: 'Fees' },
-    { to: '/app/alerts', label: 'Alerts' },
-    { to: '/app/doubts', label: 'Ask Doubt' },
-    { to: '/app/messages', label: 'Messages' },
-    { to: '/app/settings', label: 'Settings' },
-  ],
-}
+// Nav items and their icons are no longer declared here - each module
+// registers its own in lib/nav/modules/*.ts (see lib/nav/registry.ts).
 
 const ROLE_LABEL: Record<string, string> = {
   OWNER: 'Owner',
@@ -99,33 +17,10 @@ const ROLE_LABEL: Record<string, string> = {
   STAFF: 'Staff',
   PARENT: 'Parent',
   STUDENT: 'Student',
+  ACCOUNTANT: 'Accountant',
+  COUNSELLOR: 'Counsellor',
 }
 
-// 24x24 stroke icons (Lucide-style), keyed by route.
-const ICONS: Record<string, string> = {
-  '/app': 'M3 3h7v9H3z M14 3h7v5h-7z M14 12h7v9h-7z M3 16h7v5H3z',
-  '/app/batches': 'M12 2 2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5',
-  '/app/students':
-    'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
-  '/app/attendance': 'M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4 12 14.01l-3-3',
-  '/app/homework': 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
-  '/app/timetable':
-    'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
-  '/app/study-material': 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
-  '/app/tests':
-    'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 2h6v4H9z M9 12h6 M9 16h4',
-  '/app/fees': 'M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M1 10h22',
-  '/app/alerts': 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
-  '/app/analytics': 'M18 20V10 M12 20V4 M6 20v-6',
-  '/app/reports': 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
-  '/app/settings': 'M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6',
-  '/app/checkin':
-    'M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M7 12h10',
-  '/app/take-test': 'M12 20h9 M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z',
-  '/app/doubts':
-    'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z',
-  '/app/messages': 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M22 6l-10 7L2 6',
-}
 const LOGOUT_ICON = 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9'
 
 function Icon({ d, className = 'h-[18px] w-[18px]' }: { d: string; className?: string }) {
@@ -145,6 +40,35 @@ function Icon({ d, className = 'h-[18px] w-[18px]' }: { d: string; className?: s
   )
 }
 
+/**
+ * Tenant logo, falling back to the "T" badge when there's no logo, it's
+ * still loading, or the image fails to load. Logo URLs are signed and
+ * expire (see TenantBrandProvider), so we remember which URL failed - a
+ * freshly refetched URL then gets another try instead of staying on "T".
+ */
+function BrandMark({ className = 'h-9 w-9', textClassName = 'text-lg' }: { className?: string; textClassName?: string }) {
+  const { logoUrl } = useTenantBrand()
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+
+  if (logoUrl && logoUrl !== failedUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt="School logo"
+        onError={() => setFailedUrl(logoUrl)}
+        className={`${className} rounded-xl object-cover bg-white shrink-0 shadow-lg shadow-chalk/20`}
+      />
+    )
+  }
+  return (
+    <div
+      className={`${className} rounded-xl bg-linear-to-br from-chalk to-chalk-deep text-navy font-display ${textClassName} font-bold flex items-center justify-center shrink-0 shadow-lg shadow-chalk/20`}
+    >
+      T
+    </div>
+  )
+}
+
 const SIDEBAR_BG = 'bg-linear-to-b from-navy-deep to-navy text-white'
 const MENU_ANIMATION_MS = 180
 
@@ -152,7 +76,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { role, phoneNumber, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const items = NAV_BY_ROLE[role ?? ''] ?? []
+  const items = navItemsForRole(role)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuRendered, setMenuRendered] = useState(false)
   const [menuClosing, setMenuClosing] = useState(false)
@@ -171,11 +95,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const sidebarContent = (
     <>
       <div className="px-5 py-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-linear-to-br from-chalk to-chalk-deep text-navy font-display text-lg font-bold flex items-center justify-center shadow-lg shadow-chalk/20">
-            T
-          </div>
-          <div>
+        <div className="flex items-center gap-3 min-w-0">
+          <BrandMark />
+          <div className="min-w-0">
             <div className="font-display text-xl leading-none tracking-tight">TeacherOS</div>
             <div className="text-[11px] text-white/50 mt-1">{ROLE_LABEL[role ?? ''] ?? ''} workspace</div>
           </div>
@@ -212,7 +134,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   }`}
                 />
                 <span className={`transition-colors ${isActive ? 'text-chalk' : 'text-white/50 group-hover:text-chalk'}`}>
-                  <Icon d={ICONS[item.to] ?? ICONS['/app']} />
+                  <Icon d={item.icon ?? DEFAULT_NAV_ICON} />
                 </span>
                 <span>{item.label}</span>
               </>
@@ -248,7 +170,10 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex bg-paper">
       <div className="md:hidden fixed top-0 inset-x-0 h-14 bg-linear-to-r from-navy-deep to-navy text-white flex items-center justify-between px-4 z-30 shadow-md">
-        <span className="font-display text-lg tracking-tight">TeacherOS</span>
+        <span className="flex items-center gap-2 font-display text-lg tracking-tight">
+          <BrandMark className="h-7 w-7" textClassName="text-sm" />
+          TeacherOS
+        </span>
         <div className="flex items-center gap-1">
           <ThemeToggle className="text-white/70 hover:text-chalk hover:bg-white/10" />
           <button onClick={() => setMenuOpen(true)} className="p-2 -mr-2 transition-transform active:scale-90" aria-label="Open menu">

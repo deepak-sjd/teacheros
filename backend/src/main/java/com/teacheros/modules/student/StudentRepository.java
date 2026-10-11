@@ -3,7 +3,10 @@ package com.teacheros.modules.student;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +16,28 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
     Optional<Student> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Page<Student> findByTenantIdAndActiveTrue(UUID tenantId, Pageable pageable);
+
+    /**
+     * Name / guardian-phone search for the student picker. pattern is a
+     * ready-made lowercase LIKE pattern (see StudentService#list) using
+     * '!' as the escape character. Ordering is fixed here, so callers
+     * must not also pass a sort.
+     */
+    @Query("""
+            SELECT s FROM Student s
+            WHERE s.tenantId = :tenantId AND s.active = true
+            AND (:batchId IS NULL OR s.batchId = :batchId)
+            AND (LOWER(s.fullName) LIKE :pattern ESCAPE '!' OR s.guardianPhone LIKE :pattern ESCAPE '!')
+            ORDER BY s.fullName
+            """)
+    Page<Student> search(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
+            @Param("pattern") String pattern, Pageable pageable);
+
+    /**
+     * Resolve names for a set of IDs (e.g. the students behind a page of
+     * fees). Includes inactive students - a fee outlives a deactivation.
+     */
+    List<Student> findByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids);
 
     /**
      * Unpaged variant used by NotificationService#generateLowAttendanceAlerts -
@@ -50,6 +75,14 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
      * both, so duplicate-phone checks on create/update must too.
      */
     Optional<Student> findFirstByTenantIdAndPhoneNumber(UUID tenantId, String phoneNumber);
+
+    /**
+     * Every student phone_number in the tenant, active or not - the unique
+     * index uq_students_tenant_phone applies to all rows, so StudentImportService
+     * must check against inactive students' numbers too.
+     */
+    @Query("SELECT s.phoneNumber FROM Student s WHERE s.tenantId = :tenantId AND s.phoneNumber IS NOT NULL")
+    List<String> findAllPhoneNumbersByTenantId(@Param("tenantId") UUID tenantId);
 
     /**
      * Used ONLY during first-login account provisioning, before we know

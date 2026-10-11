@@ -3,6 +3,7 @@ package com.teacheros.modules.student;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.user.StaffRoles;
 import com.teacheros.modules.user.User;
 import com.teacheros.modules.user.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -13,9 +14,11 @@ import java.util.UUID;
 /**
  * Single place enforcing "which student records can the current user see."
  *
- * Staff roles (OWNER/TEACHER/STAFF/ADMIN) can see any student in their own
- * tenant - tenant isolation alone (CurrentTenantProvider) already covers
- * them, this guard is a no-op for those roles.
+ * Tenant-wide staff (StaffRoles: OWNER/TEACHER/STAFF/ADMIN) can see any
+ * student in their own tenant - tenant isolation alone
+ * (CurrentTenantProvider) already covers them, this guard is a no-op for
+ * those roles. ACCOUNTANT/COUNSELLOR are NOT in that set (see StaffRoles) and
+ * therefore get a 404 here like any other non-linked caller.
  *
  * PARENT and STUDENT are different: tenant isolation is not enough, because
  * many students share a tenant. A parent may only see students whose
@@ -51,7 +54,7 @@ public class StudentAccessGuard {
     public void assertCanView(UUID studentId) {
         String role = currentTenantProvider.getCurrentRole();
 
-        if (isStaffRole(role)) {
+        if (StaffRoles.isTenantWideStaff(role)) {
             return; // tenant isolation alone already scopes staff correctly
         }
 
@@ -71,13 +74,6 @@ public class StudentAccessGuard {
         if (!allowed) {
             throw new ResourceNotFoundException("Student", studentId);
         }
-    }
-
-    private boolean isStaffRole(String role) {
-        return switch (role) {
-            case "OWNER", "TEACHER", "STAFF", "ADMIN" -> true;
-            default -> false;
-        };
     }
 
     /**

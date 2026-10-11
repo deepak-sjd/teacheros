@@ -1,0 +1,40 @@
+# Module: AI (doubt solver, content generator, study plan).
+app:
+  ai:
+    # "log" (dev default) returns a canned placeholder reply instead of
+    # calling a real AI provider - lets the whole ask/save/display flow be
+    # developed and tested without any AI setup.
+    # "ollama" - FREE, self-hosted open-source model (Llama/Phi/Mistral/
+    # Gemma) via https://ollama.com running on your own server. No API key,
+    # no per-call cost, no third-party billing. Requires the model to
+    # already be pulled on the Ollama host (e.g. `ollama pull llama3.2`).
+    # "anthropic" calls the paid Anthropic API - requires ANTHROPIC_API_KEY
+    # and is billed per token. Only use this if you've decided the cost is
+    # worth it; "ollama" is the $0 option.
+    provider: ${AI_PROVIDER:log}
+    # Applies only to STUDENT-asked questions (see DoubtService) - protects
+    # against runaway load on whichever provider is configured, not a
+    # product-facing quota.
+    daily-question-limit: ${AI_DAILY_QUESTION_LIMIT:30}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${OLLAMA_MODEL:llama3.2}
+      timeout-seconds: ${OLLAMA_TIMEOUT_SECONDS:120}
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: ${ANTHROPIC_MODEL:claude-sonnet-5}
+      # Budget for a tutoring answer - a short paragraph.
+      max-tokens: ${ANTHROPIC_MAX_TOKENS:500}
+      # Separate, larger budget for the AI Content Generator (a batch of
+      # MCQ questions or a page of study notes is a lot more text than a
+      # doubt-solver answer) - see AnthropicAiTutorClient#generateQuestions
+      # / #generateNotes.
+      content-max-tokens: ${ANTHROPIC_CONTENT_MAX_TOKENS:2000}
+
+          # Per-TENANT daily caps on provider calls, per feature (resets at midnight IST).
+    # Failed calls count too. 0 disables a feature entirely.
+    limits:
+      doubt: ${AI_LIMIT_DOUBT:2000}
+      study-plan: ${AI_LIMIT_STUDY_PLAN:300}
+      content-questions: ${AI_LIMIT_CONTENT_QUESTIONS:200}
+      content-notes: ${AI_LIMIT_CONTENT_NOTES:200}

@@ -45,6 +45,9 @@ public class AttendanceDtos {
      * per-student detail here (that's a separate call to the existing
      * GET /attendance/sessions/{id} endpoint if a teacher taps into one
      * session) - keeps the history list itself lightweight.
+     *
+     * totalCount is every record in the session including excused ones, so
+     * present + absent + late + excused == totalCount.
      */
     public record BatchSessionSummary(
             UUID classSessionId,
@@ -52,6 +55,7 @@ public class AttendanceDtos {
             int presentCount,
             int absentCount,
             int lateCount,
+            int excusedCount,
             int totalCount) {
     }
 

@@ -5,6 +5,7 @@ import type { Batch, Page, Student } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row, Select } from '@/components/ui'
 import { Pagination, PAGE_SIZE } from '@/components/Pagination'
+import { ImportStudentsModal } from '@/components/ImportStudentsModal'
 
 export function Students() {
   const [data, setData] = useState<Page<Student> | null>(null)
@@ -13,6 +14,7 @@ export function Students() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
 
   function load(p = page) {
@@ -65,7 +67,14 @@ export function Students() {
       <PageHeader
         title="Students"
         description="Everyone enrolled across your batches."
-        action={<Button onClick={() => setModalOpen(true)}>Add student</Button>}
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              Import
+            </Button>
+            <Button onClick={() => setModalOpen(true)}>Add student</Button>
+          </div>
+        }
       />
 
       {error && <ErrorBanner message={error} />}
@@ -75,8 +84,15 @@ export function Students() {
       ) : !data || data.totalElements === 0 ? (
         <EmptyState
           title="No students yet"
-          description="Add your first student to start tracking attendance and fees."
-          action={<Button onClick={() => setModalOpen(true)}>Add student</Button>}
+          description="Add your first student, or import a list from a spreadsheet."
+          action={
+            <div className="flex gap-2 justify-center">
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                Import
+              </Button>
+              <Button onClick={() => setModalOpen(true)}>Add student</Button>
+            </div>
+          }
         />
       ) : (
         <>
@@ -139,6 +155,8 @@ export function Students() {
           load(page)
         }}
       />
+
+      <ImportStudentsModal open={importOpen} onClose={() => setImportOpen(false)} onImported={() => load(page)} />
     </Layout>
   )
 }

@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,6 +40,10 @@ import java.util.UUID;
  */
 @Service
 public class ReportService {
+
+    // Same zone AnalyticsService buckets payments in, so "collected today"
+    // on a report and on the fee-collection chart are always the same number.
+    private static final ZoneId APP_ZONE = ZoneId.of("Asia/Kolkata");
 
     private final CurrentTenantProvider currentTenantProvider;
     private final BatchRepository batchRepository;
@@ -125,8 +129,10 @@ public class ReportService {
     // Fee has no batchId (a fee is tied to a student, not to a batch), so
     // this figure is always tenant-wide - see FeeSummary's javadoc.
     private FeeSummary buildFeeSummary(UUID tenantId, LocalDate from, LocalDate to) {
-        Instant fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toInstant = to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        // IST day boundaries: [from 00:00 IST, to+1 00:00 IST). Using UTC here
+        // pushed a 00:30 IST payment into the previous day's report.
+        Instant fromInstant = from.atStartOfDay(APP_ZONE).toInstant();
+        Instant toInstant = to.plusDays(1).atStartOfDay(APP_ZONE).toInstant();
         BigDecimal collected = feePaymentRepository.sumCollectedBetween(tenantId, fromInstant, toInstant);
 
         List<Fee> outstandingFees = feeRepository.findAllByTenantIdAndStatusIn(tenantId,

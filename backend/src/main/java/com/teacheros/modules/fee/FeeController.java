@@ -6,7 +6,6 @@ import com.teacheros.modules.fee.dto.FeeDtos.RecordPaymentRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -25,38 +24,36 @@ public class FeeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('FEES_EDIT')")
     public ResponseEntity<FeeResponse> create(@Valid @RequestBody CreateFeeRequest request) {
         return ResponseEntity.ok(feeService.createFee(request));
     }
 
     @PostMapping("/{id}/payments")
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('FEES_EDIT')")
     public ResponseEntity<FeeResponse> recordPayment(@PathVariable UUID id,
             @Valid @RequestBody RecordPaymentRequest request) {
         return ResponseEntity.ok(feeService.recordPayment(id, request));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    @PreAuthorize("@perm.has('FEES_VIEW')")
     public ResponseEntity<FeeResponse> get(@PathVariable UUID id) {
         return ResponseEntity.ok(feeService.get(id));
     }
 
     // Open to any authenticated role - FeeService enforces "your own child /
     // yourself only" for PARENT/STUDENT via StudentAccessGuard. This is the
-    // endpoint the parent/student fee ledger views call.
+    // endpoint the parent/student fee ledger views call. (ACCOUNTANT is not
+    // tenant-wide staff, so it gets a 404 here - it uses /pending instead.)
     @GetMapping("/students/{studentId}")
     public ResponseEntity<List<FeeResponse>> listForStudent(@PathVariable UUID studentId) {
         return ResponseEntity.ok(feeService.listForStudent(studentId));
     }
 
-    // Default sort is earliest due date first, with id as a tiebreaker so
-    // page boundaries are stable between requests.
     @GetMapping("/pending")
-    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
-    public ResponseEntity<Page<FeeResponse>> listPending(
-            @PageableDefault(size = 20, sort = { "dueDate", "id" }) Pageable pageable) {
+    @PreAuthorize("@perm.has('FEES_VIEW')")
+    public ResponseEntity<Page<FeeResponse>> listPending(Pageable pageable) {
         return ResponseEntity.ok(feeService.listPending(pageable));
     }
 }

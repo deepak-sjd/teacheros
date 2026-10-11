@@ -18,8 +18,20 @@ export function formatDateTime(iso: string): string {
   return isToday ? time : `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${time}`
 }
 
+/**
+ * YYYY-MM-DD for a Date in the browser's LOCAL calendar. Never use
+ * `date.toISOString().slice(0, 10)` for this - that is the UTC date, which
+ * is yesterday for anyone in India between 00:00 and 05:30.
+ */
+export function toLocalIsoDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalIsoDate(new Date())
 }
 
 export const MEETING_PLATFORM_LABELS: Record<string, string> = {

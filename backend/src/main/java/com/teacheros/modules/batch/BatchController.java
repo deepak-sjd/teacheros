@@ -15,8 +15,10 @@ import java.util.UUID;
 
 // Staff-only module throughout - parents/students don't browse batches
 // directly in this MVP, they see their child's data via the student detail
-// endpoints instead. Revisit if a future screen needs batch info for
-// parents (e.g. showing a class schedule).
+// endpoints instead. The class-level role list still applies to every method
+// that doesn't declare its own @PreAuthorize (create, get, update,
+// deactivate); list is permission-gated (BATCHES_VIEW) so the Reports page
+// can offer a batch filter to an accountant.
 @RestController
 @RequestMapping("/api/v1/batches")
 @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
@@ -34,6 +36,7 @@ public class BatchController {
     }
 
     @GetMapping
+    @PreAuthorize("@perm.has('BATCHES_VIEW')")
     public ResponseEntity<Page<BatchResponse>> list(
             @PageableDefault(size = 20, sort = { "name", "id" }) Pageable pageable) {
         return ResponseEntity.ok(batchService.list(pageable));

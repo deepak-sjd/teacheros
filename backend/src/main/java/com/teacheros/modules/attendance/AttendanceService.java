@@ -9,6 +9,7 @@ import com.teacheros.modules.attendance.dto.AttendanceDtos.StudentAttendanceEntr
 import com.teacheros.modules.attendance.dto.AttendanceDtos.StudentAttendanceRecord;
 import com.teacheros.modules.batch.BatchRepository;
 import com.teacheros.modules.student.StudentAccessGuard;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,9 @@ import java.util.UUID;
  * NEVER stored. It's always computed from the underlying Attendance rows
  * at query time. This is slightly more work per read, but guarantees the
  * number a parent sees can never drift from the actual marked records.
+ *
+ * EXCUSED rule: an excused record is neither attended nor held against the
+ * student - it's left out of the denominator (see AttendanceRepository).
  */
 @Service
 public class AttendanceService {
@@ -35,6 +39,7 @@ public class AttendanceService {
     private final AttendanceQrTokenService qrTokenService;
     private final com.teacheros.modules.student.StudentRepository studentRepository;
     private final com.teacheros.modules.user.UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AttendanceService(
             AttendanceRepository attendanceRepository,
@@ -44,7 +49,8 @@ public class AttendanceService {
             StudentAccessGuard studentAccessGuard,
             AttendanceQrTokenService qrTokenService,
             com.teacheros.modules.student.StudentRepository studentRepository,
-            com.teacheros.modules.user.UserRepository userRepository) {
+            com.teacheros.modules.user.UserRepository userRepository,
+            ApplicationEventPublisher eventPublisher) {
         this.attendanceRepository = attendanceRepository;
         this.classSessionRepository = classSessionRepository;
         this.batchRepository = batchRepository;
@@ -53,6 +59,7 @@ public class AttendanceService {
         this.qrTokenService = qrTokenService;
         this.studentRepository = studentRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -77,10 +84,18 @@ public class AttendanceService {
                 .orElseGet(() -> classSessionRepository.save(
                         new ClassSession(tenantId, request.batchId(), request.sessionDate())));
 
-        return request.entries().stream()
+        List<StudentAttendanceRecord> records = request.entries().stream()
                 .map(entry -> upsertAttendance(tenantId, session.getId(), entry, userId))
                 .map(a -> new StudentAttendanceRecord(a.getStudentId(), a.getStatus()))
                 .toList();
+
+        List<UUID> absentIds = records.stream()
+                .filter(r -> r.status() == AttendanceStatus.ABSENT)
+                .map(StudentAttendanceRecord::studentId)
+                .toList();
+        eventPublisher.publishEvent(new AttendanceMarkedEvent(tenantId, request.sessionDate(), absentIds));
+
+        return records;
     }
 
     /**
@@ -193,8 +208,9 @@ public class AttendanceService {
 
     /**
      * Attendance history for a batch's detail page - one row per session,
-     * newest first, with a quick present/absent/late tally so a teacher can
-     * scan for patterns without opening every session individually.
+     * newest first, with a quick present/absent/late/excused tally so a
+     * teacher can scan for patterns without opening every session
+     * individually.
      */
     public List<BatchSessionSummary> listSessionsForBatch(UUID batchId) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
@@ -212,16 +228,18 @@ public class AttendanceService {
             int present = 0;
             int absent = 0;
             int late = 0;
+            int excused = 0;
             for (Attendance record : records) {
                 switch (record.getStatus()) {
                     case PRESENT -> present++;
                     case ABSENT -> absent++;
                     case LATE -> late++;
+                    case EXCUSED -> excused++;
                 }
             }
 
             return new BatchSessionSummary(session.getId(), session.getSessionDate(),
-                    present, absent, late, records.size());
+                    present, absent, late, excused, records.size());
         }).toList();
     }
 

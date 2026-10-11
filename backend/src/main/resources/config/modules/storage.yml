@@ -1,0 +1,27 @@
+# Module: object storage (study material, tenant logo).
+spring:
+  servlet:
+    multipart:
+      # Spring's own default is 1MB, well below our intended 20MB study
+      # material limit - this must be raised or every real upload fails
+      # before the controller even sees the request. Kept in sync with
+      # app.storage.max-file-size-mb below (the servlet limit is the hard
+      # ceiling; app-level validation gives a cleaner error message before
+      # hitting it in the common case).
+      max-file-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
+      max-request-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
+
+app:
+  storage:
+    # Defaults point at the localhost-mapped MinIO port for a local `mvn
+    # spring-boot:run`. When running via docker-compose, STORAGE_ENDPOINT
+    # is overridden to the internal `minio:9000` hostname - see
+    # docker-compose.yml.
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${STORAGE_ACCESS_KEY:teacheros}
+    secret-key: ${STORAGE_SECRET_KEY:teacheros123}
+    bucket: ${STORAGE_BUCKET:teacheros-study-material}
+    # Max upload size for a single study material file. Deliberately
+    # conservative for MVP - notes/PDFs/images, not full lecture videos.
+    # Revisit if/when recorded-class video upload becomes a real requirement.
+    max-file-size-mb: ${STORAGE_MAX_FILE_SIZE_MB:20}

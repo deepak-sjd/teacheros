@@ -1,4 +1,3 @@
-
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
 import type { Batch, Homework, Page } from '@/lib/types'
@@ -15,14 +14,17 @@ import {
 } from '@/components/ui'
 import { Pagination, PAGE_SIZE } from '@/components/Pagination'
 import { formatDate, todayIso } from '@/lib/format'
+import { HomeworkSubmissionsScreen } from '@/pages/teacher/HomeworkSubmissions'
 
 export function HomeworkPage() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [batchId, setBatchId] = useState('')
   const [items, setItems] = useState<Homework[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Homework | null>(null)
+  const [reviewing, setReviewing] = useState<Homework | null>(null)
 
   // Pagination state
   const [page, setPage] = useState(0)
@@ -40,7 +42,8 @@ export function HomeworkPage() {
           setLoading(false)
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : 'Could not load batches.')
         setLoading(false)
       })
   }, [])
@@ -50,6 +53,7 @@ export function HomeworkPage() {
     if (!forBatchId) return
 
     setLoading(true)
+    setError(null)
 
     api
       .get<Page<Homework>>('/api/v1/homework', {
@@ -68,9 +72,10 @@ export function HomeworkPage() {
         setItems(res.content)
         setPageMeta(res)
       })
-      .catch(() => {
+      .catch((err) => {
         setItems([])
         setPageMeta(null)
+        setError(err instanceof ApiError ? err.message : 'Could not load homework.')
       })
       .finally(() => {
         setLoading(false)
@@ -87,16 +92,18 @@ export function HomeworkPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this homework? This cannot be undone.')) return
 
+    setError(null)
     try {
       await api.del(`/api/v1/homework/${id}`)
       load(batchId, page)
     } catch (err) {
-      alert(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not delete this homework.',
-      )
+      setError(err instanceof ApiError ? err.message : 'Could not delete this homework.')
     }
+  }
+
+  // Submissions review screen (full-page, replaces the list until the teacher goes back).
+  if (reviewing) {
+    return <HomeworkSubmissionsScreen homework={reviewing} onBack={() => setReviewing(null)} />
   }
 
   return (
@@ -112,6 +119,8 @@ export function HomeworkPage() {
           ) : undefined
         }
       />
+
+      {error && <ErrorBanner message={error} />}
 
       {batches.length === 0 ? (
         <EmptyState
@@ -176,6 +185,13 @@ export function HomeworkPage() {
                         <span className="text-xs text-slate">
                           Due {formatDate(h.dueDate)}
                         </span>
+
+                        <button
+                          onClick={() => setReviewing(h)}
+                          className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                        >
+                          Submissions
+                        </button>
 
                         <button
                           onClick={() => setEditing(h)}

@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type { Message } from '@/lib/types'
 import { Button, ErrorBanner, Textarea } from '@/components/ui'
 import { formatDateTime } from '@/lib/format'
 
 /**
- * One thread per student, shared by MyChildren (parent), MyAttendance
- * (student, read-only - see the 403 note below), and StudentDetail (staff).
- * `mine` on each message is already resolved server-side per the caller's
- * role, so this component doesn't need to know who's viewing it.
+ * One thread per student, shared by MyChildren (parent), the student
+ * Messages page (read-only), and StudentDetail (staff). `mine` on each
+ * message is already resolved server-side per the caller's role, so this
+ * component doesn't need to know who's viewing it - except for whether to
+ * offer a send box: the backend only lets a PARENT or staff member send
+ * (MessageService#send returns 403 for STUDENT), so a STUDENT gets a
+ * read-only note instead of a form that can only fail.
  */
 export function MessageThread({ studentId }: { studentId: string }) {
+  const { role } = useAuth()
+  const canSend = role !== 'STUDENT'
+
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [body, setBody] = useState('')
@@ -35,7 +42,7 @@ export function MessageThread({ studentId }: { studentId: string }) {
 
   async function handleSend(e: FormEvent) {
     e.preventDefault()
-    if (!body.trim()) return
+    if (!canSend || !body.trim()) return
     setError(null)
     setSending(true)
     try {
@@ -43,10 +50,6 @@ export function MessageThread({ studentId }: { studentId: string }) {
       setMessages((prev) => [...prev, sent])
       setBody('')
     } catch (err) {
-      // A STUDENT viewer hits this as a 403 the first time they try to
-      // send - the backend allows them to read the thread but not post to
-      // it (only PARENT/staff can send). ApiError.message carries that
-      // through to here as plain text rather than a generic failure.
       setError(err instanceof ApiError ? err.message : 'Could not send message.')
     } finally {
       setSending(false)
@@ -59,7 +62,9 @@ export function MessageThread({ studentId }: { studentId: string }) {
         {loading ? (
           <p className="text-slate text-sm">Loading…</p>
         ) : messages.length === 0 ? (
-          <p className="text-slate text-sm text-center py-6">No messages yet. Say hello!</p>
+          <p className="text-slate text-sm text-center py-6">
+            {canSend ? 'No messages yet. Say hello!' : 'No messages yet.'}
+          </p>
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
@@ -86,19 +91,27 @@ export function MessageThread({ studentId }: { studentId: string }) {
         </div>
       )}
 
-      <form onSubmit={handleSend} className="flex items-end gap-2 border-t border-line p-3">
-        <div className="flex-1">
-          <Textarea
-            rows={1}
-            placeholder="Write a message…"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-          />
+      {canSend ? (
+        <form onSubmit={handleSend} className="flex items-end gap-2 border-t border-line p-3">
+          <div className="flex-1">
+            <Textarea
+              rows={1}
+              placeholder="Write a message…"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </div>
+          <Button type="submit" disabled={sending || !body.trim()}>
+            {sending ? 'Sending…' : 'Send'}
+          </Button>
+        </form>
+      ) : (
+        <div className="border-t border-line p-3">
+          <p className="text-xs text-slate-light">
+            Read only — you can follow this conversation, but only a parent or a teacher can send messages.
+          </p>
         </div>
-        <Button type="submit" disabled={sending || !body.trim()}>
-          {sending ? 'Sending…' : 'Send'}
-        </Button>
-      </form>
+      )}
     </div>
   )
 }

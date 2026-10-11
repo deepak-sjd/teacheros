@@ -3,6 +3,8 @@ package com.teacheros.modules.studyplan;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.ai.AiFeature;
+import com.teacheros.modules.ai.AiUsageService;
 import com.teacheros.modules.assessment.MarkRepository;
 import com.teacheros.modules.assessment.MarkRepository.SubjectScoreRow;
 import com.teacheros.modules.doubt.AiTutorClient;
@@ -40,6 +42,9 @@ import java.util.UUID;
  * from already-graded marks is closer to pulling up a report - a parent
  * or staff member reviewing a student's progress is a completely
  * reasonable reason to request one too.
+ *
+ * Every regenerate() that reaches the AI provider goes through
+ * AiUsageService (per-tenant daily limit + ai_usage row).
  */
 @Service
 public class StudyPlanService {
@@ -52,6 +57,7 @@ public class StudyPlanService {
     private final StudentAccessGuard studentAccessGuard;
     private final CurrentTenantProvider currentTenantProvider;
     private final AiTutorClient aiTutorClient;
+    private final AiUsageService aiUsageService;
     private final double weakSubjectThreshold;
 
     public StudyPlanService(
@@ -61,6 +67,7 @@ public class StudyPlanService {
             StudentAccessGuard studentAccessGuard,
             CurrentTenantProvider currentTenantProvider,
             AiTutorClient aiTutorClient,
+            AiUsageService aiUsageService,
             // A subject below this average percentage (across every graded
             // test in it, all-time) counts as "weak". 60% is a reasonable
             // generic pass/fail-adjacent line for a coaching-centre
@@ -73,6 +80,7 @@ public class StudyPlanService {
         this.studentAccessGuard = studentAccessGuard;
         this.currentTenantProvider = currentTenantProvider;
         this.aiTutorClient = aiTutorClient;
+        this.aiUsageService = aiUsageService;
         this.weakSubjectThreshold = weakSubjectThreshold;
     }
 
@@ -119,7 +127,11 @@ public class StudyPlanService {
 
         String planText;
         try {
-            planText = aiTutorClient.studyPlan(student.getGrade(), weak);
+            // Validation above runs first so a rejected request never burns daily quota.
+            // A tenant over its limit gets a 429 ApiException from track(), which is
+            // deliberately not caught below.
+            planText = aiUsageService.track(AiFeature.STUDY_PLAN,
+                    () -> aiTutorClient.studyPlan(student.getGrade(), weak));
         } catch (AiTutorException e) {
             log.error("AI tutor failed to generate a study plan for student {}: {}", studentId, e.getMessage(), e);
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE",

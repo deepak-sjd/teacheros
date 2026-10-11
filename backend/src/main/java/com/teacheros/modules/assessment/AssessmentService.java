@@ -13,6 +13,8 @@ import com.teacheros.modules.assessment.dto.MarkDtos.SubmitMarksRequest;
 import com.teacheros.modules.assessment.dto.RankingDtos.BatchRankingEntry;
 import com.teacheros.modules.assessment.dto.RankingDtos.BatchRankingResponse;
 import com.teacheros.modules.assessment.dto.RankingDtos.StudentRankResponse;
+import com.teacheros.modules.audit.AuditActions;
+import com.teacheros.modules.audit.AuditService;
 import com.teacheros.modules.batch.Batch;
 import com.teacheros.modules.batch.BatchAccessGuard;
 import com.teacheros.modules.batch.BatchRepository;
@@ -38,27 +40,39 @@ public class AssessmentService {
 
     private final AssessmentRepository assessmentRepository;
     private final MarkRepository markRepository;
+    private final TestQuestionRepository testQuestionRepository;
+    private final TestAttemptRepository testAttemptRepository;
+    private final TestAnswerRepository testAnswerRepository;
     private final BatchRepository batchRepository;
     private final StudentRepository studentRepository;
     private final BatchAccessGuard batchAccessGuard;
     private final StudentAccessGuard studentAccessGuard;
     private final CurrentTenantProvider currentTenantProvider;
+    private final AuditService auditService;
 
     public AssessmentService(
             AssessmentRepository assessmentRepository,
             MarkRepository markRepository,
+            TestQuestionRepository testQuestionRepository,
+            TestAttemptRepository testAttemptRepository,
+            TestAnswerRepository testAnswerRepository,
             BatchRepository batchRepository,
             StudentRepository studentRepository,
             BatchAccessGuard batchAccessGuard,
             StudentAccessGuard studentAccessGuard,
-            CurrentTenantProvider currentTenantProvider) {
+            CurrentTenantProvider currentTenantProvider,
+            AuditService auditService) {
         this.assessmentRepository = assessmentRepository;
         this.markRepository = markRepository;
+        this.testQuestionRepository = testQuestionRepository;
+        this.testAttemptRepository = testAttemptRepository;
+        this.testAnswerRepository = testAnswerRepository;
         this.batchRepository = batchRepository;
         this.studentRepository = studentRepository;
         this.batchAccessGuard = batchAccessGuard;
         this.studentAccessGuard = studentAccessGuard;
         this.currentTenantProvider = currentTenantProvider;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -94,16 +108,51 @@ public class AssessmentService {
         return toResponse(assessmentRepository.save(assessment));
     }
 
+    /**
+     * Deletes a test and everything that references it, in FK order, in one
+     * transaction: answers -> attempts -> questions -> marks -> test.
+     *
+     * Marks reference the test by ID (no JPA cascade), and for an ONLINE_MCQ
+     * test so do test_questions/test_attempts/test_answers - missing any of
+     * them used to surface as an FK violation (500).
+     *
+     * If any student has SUBMITTED an attempt, this is destructive (their
+     * answers and score are permanently lost), so it's refused with a 409
+     * unless the caller passes confirm=true. In-progress-only attempts don't
+     * need confirmation - nothing graded is lost.
+     */
     @Transactional
-    public void delete(UUID testId) {
+    public void delete(UUID testId, boolean confirm) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         Assessment assessment = assessmentRepository.findByIdAndTenantId(testId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Test", testId));
-        // Marks reference this test by ID (not a JPA relationship/cascade),
-        // so they're cleaned up explicitly rather than relying on a
-        // cascade the entity mapping doesn't declare.
-        markRepository.deleteAll(markRepository.findByTenantIdAndTestId(tenantId, testId));
+
+        List<TestAttempt> attempts = testAttemptRepository.findByTenantIdAndTestId(tenantId, testId);
+        long submitted = attempts.stream().filter(a -> a.getStatus() == AttemptStatus.SUBMITTED).count();
+        if (submitted > 0 && !confirm) {
+            throw new ApiException(HttpStatus.CONFLICT, "TEST_HAS_SUBMISSIONS",
+                    submitted + " student" + (submitted == 1 ? " has" : "s have")
+                            + " already submitted this test. Deleting it permanently removes their answers"
+                            + " and scores.");
+        }
+
+        if (!attempts.isEmpty()) {
+            List<UUID> attemptIds = attempts.stream().map(TestAttempt::getId).toList();
+            testAnswerRepository.deleteForAttempts(tenantId, attemptIds);
+            testAttemptRepository.deleteForTest(tenantId, testId);
+        }
+        testQuestionRepository.deleteByTenantIdAndTestId(tenantId, testId);
+        List<Mark> marks = markRepository.findByTenantIdAndTestId(tenantId, testId);
+        markRepository.deleteAll(marks);
         assessmentRepository.delete(assessment);
+
+        auditService.record(AuditActions.TEST_DELETED, AuditActions.TEST, testId, AuditService.meta(
+                "title", assessment.getTitle(),
+                "batchId", assessment.getBatchId(),
+                "testType", assessment.getTestType(),
+                "marksDeleted", marks.size(),
+                "attemptsDeleted", attempts.size(),
+                "submittedAttempts", submitted));
     }
 
     public AssessmentResponse get(UUID testId) {
@@ -117,16 +166,29 @@ public class AssessmentService {
     /**
      * testType is optional - null means every test type (teacher's test
      * list), ONLINE_MCQ narrows to what the student "take a test" screen
-     * wants (see AssessmentRepository's javadoc on the dedicated query
-     * method this was written for but, until now, never called).
+     * wants.
+     *
+     * Staff see everything, including online tests still being authored.
+     * PARENT/STUDENT never see an ONLINE_MCQ test that has no questions
+     * yet - the filter is in the query so paging totals stay correct.
      */
     public Page<AssessmentResponse> listForBatch(UUID batchId, TestType testType, Pageable pageable) {
         batchAccessGuard.assertCanView(batchId);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
-        Page<Assessment> page = testType != null
-                ? assessmentRepository.findByTenantIdAndBatchIdAndTestTypeOrderByTestDateDesc(tenantId, batchId,
-                        testType, pageable)
-                : assessmentRepository.findByTenantIdAndBatchIdOrderByTestDateDesc(tenantId, batchId, pageable);
+
+        Page<Assessment> page;
+        if (isStaffRole(currentTenantProvider.getCurrentRole())) {
+            page = testType != null
+                    ? assessmentRepository.findByTenantIdAndBatchIdAndTestTypeOrderByTestDateDesc(tenantId,
+                            batchId, testType, pageable)
+                    : assessmentRepository.findByTenantIdAndBatchIdOrderByTestDateDesc(tenantId, batchId,
+                            pageable);
+        } else {
+            page = testType != null
+                    ? assessmentRepository.findVisibleToStudentsByBatchAndType(tenantId, batchId, testType,
+                            pageable)
+                    : assessmentRepository.findVisibleToStudentsByBatch(tenantId, batchId, pageable);
+        }
         return page.map(this::toResponse);
     }
 
@@ -152,10 +214,18 @@ public class AssessmentService {
             }
         }
 
-        return request.entries().stream()
+        List<MarkResponse> saved = request.entries().stream()
                 .map(entry -> upsertMark(tenantId, testId, entry))
                 .map(m -> new MarkResponse(m.getStudentId(), m.getMarksObtained()))
                 .toList();
+
+        long graded = request.entries().stream().filter(e -> e.marksObtained() != null).count();
+        auditService.record(AuditActions.MARKS_SUBMITTED, AuditActions.TEST, testId, AuditService.meta(
+                "title", assessment.getTitle(),
+                "entries", request.entries().size(),
+                "graded", graded));
+
+        return saved;
     }
 
     private Mark upsertMark(UUID tenantId, UUID testId, StudentMarkEntry entry) {
@@ -307,6 +377,13 @@ public class AssessmentService {
             entries.add(new BatchRankingEntry(s.student().getId(), s.student().getFullName(), null, 0.0, 0));
         }
         return entries;
+    }
+
+    private boolean isStaffRole(String role) {
+        return switch (role) {
+            case "OWNER", "TEACHER", "STAFF", "ADMIN" -> true;
+            default -> false;
+        };
     }
 
     private double round1(double value) {

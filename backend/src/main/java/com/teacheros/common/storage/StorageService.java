@@ -90,6 +90,31 @@ public class StorageService {
     }
 
     /**
+     * For per-student documents (birth certificate, transfer certificate,
+     * ID proof...) - a student belongs to a tenant and may have no batch,
+     * so this is namespaced by tenant and student instead of batch. Added
+     * by Dev 13 (V120); existing upload methods are unchanged.
+     */
+    public String uploadStudentDocument(UUID tenantId, UUID studentId, MultipartFile file) {
+        String key = "tenants/%s/students/%s/documents/%s-%s".formatted(
+                tenantId, studentId, UUID.randomUUID(), sanitizeFilename(file.getOriginalFilename()));
+
+        try {
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .contentType(file.getContentType())
+                            .build(),
+                    RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read uploaded file", e);
+        }
+
+        return key;
+    }
+
+    /**
      * A short-lived, signed GET URL - never a permanent public link. Default
      * expiry is intentionally short; the client is expected to fetch a
      * fresh one each time it wants to download, not cache it long-term.

@@ -10,8 +10,11 @@ import java.util.Set;
  * check (not deep content sniffing/magic-byte validation) - adequate for
  * MVP scope; revisit with a library like Apache Tika if this needs to
  * harden further before a wider public launch.
+ *
+ * Public since V70: also used by homework submissions
+ * (HomeworkSubmissionService) so both upload paths share one whitelist.
  */
-final class AllowedContentTypes {
+public final class AllowedContentTypes {
 
     private AllowedContentTypes() {
     }
@@ -32,7 +35,7 @@ final class AllowedContentTypes {
             // declared type" posture the rest of this whitelist is about.
             "text/plain");
 
-    static boolean isAllowed(String contentType) {
+    public static boolean isAllowed(String contentType) {
         return contentType != null && WHITELIST.contains(contentType);
     }
 }

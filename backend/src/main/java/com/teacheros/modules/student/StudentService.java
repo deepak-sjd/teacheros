@@ -3,6 +3,8 @@ package com.teacheros.modules.student;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.audit.AuditActions;
+import com.teacheros.modules.audit.AuditService;
 import com.teacheros.modules.batch.BatchRepository;
 import com.teacheros.modules.student.dto.StudentDtos.CreateStudentRequest;
 import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
@@ -21,23 +23,28 @@ import java.util.UUID;
 @Service
 public class StudentService {
 
+    private static final int MAX_LOOKUP_IDS = 200;
+
     private final StudentRepository studentRepository;
     private final UserRepository userRepository;
     private final BatchRepository batchRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final StudentAccessGuard studentAccessGuard;
+    private final AuditService auditService;
 
     public StudentService(
             StudentRepository studentRepository,
             UserRepository userRepository,
             BatchRepository batchRepository,
             CurrentTenantProvider currentTenantProvider,
-            StudentAccessGuard studentAccessGuard) {
+            StudentAccessGuard studentAccessGuard,
+            AuditService auditService) {
         this.studentRepository = studentRepository;
         this.userRepository = userRepository;
         this.batchRepository = batchRepository;
         this.currentTenantProvider = currentTenantProvider;
         this.studentAccessGuard = studentAccessGuard;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -82,7 +89,7 @@ public class StudentService {
      * Soft delete - attendance, marks, fees and messages keep referencing
      * this student, so the row stays. Inactive students disappear from
      * lists, rosters, reports, alerts, and from parent/student account
-     * linking. Idempotent.
+     * linking. Idempotent (and only audited when something actually changed).
      */
     @Transactional
     public void deactivate(UUID studentId) {
@@ -92,15 +99,43 @@ public class StudentService {
         if (student.isActive()) {
             student.setActive(false);
             studentRepository.save(student);
+            // Name only - phone numbers are deliberately not written to the audit log.
+            auditService.record(AuditActions.STUDENT_DEACTIVATED, AuditActions.STUDENT, studentId,
+                    AuditService.meta("fullName", student.getFullName(), "batchId", student.getBatchId()));
         }
     }
 
-    public Page<StudentResponse> list(UUID batchId, Pageable pageable) {
+    /**
+     * search (optional) matches a name or guardian-phone fragment,
+     * case-insensitively, ordered by name. Blank/null keeps the original
+     * unsearched behaviour.
+     */
+    public Page<StudentResponse> list(UUID batchId, String search, Pageable pageable) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
+
+        if (search != null && !search.isBlank()) {
+            String pattern = "%" + escapeLike(search.trim().toLowerCase()) + "%";
+            return studentRepository.search(tenantId, batchId, pattern, pageable).map(this::toResponse);
+        }
+
         Page<Student> page = (batchId != null)
                 ? studentRepository.findByTenantIdAndBatchIdAndActiveTrue(tenantId, batchId, pageable)
                 : studentRepository.findByTenantIdAndActiveTrue(tenantId, pageable);
         return page.map(this::toResponse);
+    }
+
+    /**
+     * Staff-only: resolve a set of student IDs to records (e.g. names for a page of
+     * fees).
+     */
+    public List<StudentResponse> lookup(List<UUID> ids) {
+        if (ids.size() > MAX_LOOKUP_IDS) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TOO_MANY_IDS",
+                    "Look up at most " + MAX_LOOKUP_IDS + " students at a time.");
+        }
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        return studentRepository.findByTenantIdAndIdIn(tenantId, ids.stream().distinct().toList())
+                .stream().map(this::toResponse).toList();
     }
 
     /**
@@ -171,6 +206,11 @@ public class StudentService {
                 .orElseThrow(
                         () -> new IllegalStateException("Authenticated user not found - this should never happen"));
         return user.getPhoneNumber();
+    }
+
+    // '!' is the ESCAPE character in StudentRepository#search.
+    private String escapeLike(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     private StudentResponse toResponse(Student student) {

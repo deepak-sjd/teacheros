@@ -14,10 +14,12 @@ import com.teacheros.modules.attendance.AttendanceStatus;
 import com.teacheros.modules.batch.BatchRepository;
 import com.teacheros.modules.fee.FeePaymentRepository;
 import com.teacheros.modules.fee.FeePaymentRepository.PaymentRow;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -36,6 +38,10 @@ import java.util.UUID;
  * here is cached, so a chart can never drift out of sync with the
  * underlying records; it just costs a query every time it's requested,
  * which is fine for the once-per-dashboard-load usage this serves.
+ *
+ * Every "today" in this class is resolved in APP_ZONE (Asia/Kolkata), never
+ * the server's default zone - a server running in UTC would otherwise call
+ * 00:30 IST "yesterday".
  */
 @Service
 public class AnalyticsService {
@@ -47,18 +53,37 @@ public class AnalyticsService {
     private final MarkRepository markRepository;
     private final BatchRepository batchRepository;
     private final FeePaymentRepository feePaymentRepository;
+    private final Clock clock;
 
+    @Autowired
     public AnalyticsService(
             CurrentTenantProvider currentTenantProvider,
             AttendanceRepository attendanceRepository,
             MarkRepository markRepository,
             BatchRepository batchRepository,
             FeePaymentRepository feePaymentRepository) {
+        this(currentTenantProvider, attendanceRepository, markRepository, batchRepository, feePaymentRepository,
+                Clock.system(APP_ZONE));
+    }
+
+    // Test seam - lets a unit test pin "now" without a global Clock bean.
+    AnalyticsService(
+            CurrentTenantProvider currentTenantProvider,
+            AttendanceRepository attendanceRepository,
+            MarkRepository markRepository,
+            BatchRepository batchRepository,
+            FeePaymentRepository feePaymentRepository,
+            Clock clock) {
         this.currentTenantProvider = currentTenantProvider;
         this.attendanceRepository = attendanceRepository;
         this.markRepository = markRepository;
         this.batchRepository = batchRepository;
         this.feePaymentRepository = feePaymentRepository;
+        this.clock = clock;
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(clock.withZone(APP_ZONE));
     }
 
     /**
@@ -70,7 +95,7 @@ public class AnalyticsService {
      * response small.
      */
     public com.teacheros.modules.analytics.dto.AnalyticsDtos.FeeCollectionTrendResponse feeCollectionTrend(int days) {
-        LocalDate to = LocalDate.now(APP_ZONE);
+        LocalDate to = today();
         LocalDate from = to.minusDays(Math.max(days, 1) - 1L);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
 
@@ -99,7 +124,7 @@ public class AnalyticsService {
      * attendance day.
      */
     public AttendanceTrendResponse attendanceTrend(int days, UUID batchId) {
-        LocalDate to = LocalDate.now();
+        LocalDate to = today();
         LocalDate from = to.minusDays(Math.max(days, 1) - 1L);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         assertBatchBelongsToTenant(tenantId, batchId);
@@ -133,7 +158,7 @@ public class AnalyticsService {
      * bar order doesn't jump around between requests.
      */
     public SubjectPerformanceResponse subjectPerformance(int days, UUID batchId) {
-        LocalDate to = LocalDate.now();
+        LocalDate to = today();
         LocalDate from = to.minusDays(Math.max(days, 1) - 1L);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
         assertBatchBelongsToTenant(tenantId, batchId);

@@ -3,6 +3,8 @@ package com.teacheros.modules.batch;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.audit.AuditActions;
+import com.teacheros.modules.audit.AuditService;
 import com.teacheros.modules.batch.dto.BatchDtos.BatchResponse;
 import com.teacheros.modules.batch.dto.BatchDtos.CreateBatchRequest;
 import com.teacheros.modules.batch.dto.BatchDtos.UpdateBatchRequest;
@@ -21,12 +23,14 @@ public class BatchService {
     private final BatchRepository batchRepository;
     private final StudentRepository studentRepository;
     private final CurrentTenantProvider currentTenantProvider;
+    private final AuditService auditService;
 
     public BatchService(BatchRepository batchRepository, StudentRepository studentRepository,
-            CurrentTenantProvider currentTenantProvider) {
+            CurrentTenantProvider currentTenantProvider, AuditService auditService) {
         this.batchRepository = batchRepository;
         this.studentRepository = studentRepository;
         this.currentTenantProvider = currentTenantProvider;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -50,7 +54,8 @@ public class BatchService {
      * Soft delete (is_active=false) - homework, tests, attendance history
      * etc. all reference this batch by id and must stay readable. Refused
      * while active students are still enrolled, rather than silently
-     * un-enrolling them. Idempotent for an already-inactive batch.
+     * un-enrolling them. Idempotent for an already-inactive batch (and only
+     * audited when something actually changed).
      */
     @Transactional
     public void deactivate(UUID batchId) {
@@ -71,6 +76,8 @@ public class BatchService {
 
         batch.setActive(false);
         batchRepository.save(batch);
+        auditService.record(AuditActions.BATCH_DEACTIVATED, AuditActions.BATCH, batchId,
+                AuditService.meta("name", batch.getName(), "subject", batch.getSubject()));
     }
 
     public Page<BatchResponse> list(Pageable pageable) {

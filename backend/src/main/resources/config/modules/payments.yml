@@ -1,0 +1,20 @@
+# Module: fee payments (money - Dev 4 review required, see CODEOWNERS).
+app:
+  payment:
+    # "mock" (dev default) - no real gateway. PaymentController returns a
+    # fake order the frontend "pays" with its own "Simulate successful
+    # payment" button; no real money, no Razorpay account needed to
+    # develop/test the whole fee-payment flow.
+    # "razorpay" calls the real Razorpay API - requires
+    # app.payment.razorpay.key-id/key-secret below (an actual Razorpay
+    # account) and is billed per transaction per Razorpay's own pricing.
+    provider: ${PAYMENT_PROVIDER:mock}
+    currency: ${PAYMENT_CURRENCY:INR}
+    razorpay:
+      # Only read when app.payment.provider=razorpay - RazorpayPaymentGateway
+      # isn't even instantiated (@ConditionalOnProperty) when provider=mock,
+      # so these can stay blank otherwise.
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      # NOTE: missing from the new instructions' payments.yml - kept from the old file.
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}

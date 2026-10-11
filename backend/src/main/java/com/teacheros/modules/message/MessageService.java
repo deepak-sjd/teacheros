@@ -6,6 +6,7 @@ import com.teacheros.modules.message.dto.MessageDtos.MessageResponse;
 import com.teacheros.modules.message.dto.MessageDtos.SendMessageRequest;
 import com.teacheros.modules.message.dto.MessageDtos.UnreadCountResponse;
 import com.teacheros.modules.student.StudentAccessGuard;
+import com.teacheros.modules.user.StaffRoles;
 import com.teacheros.modules.user.User;
 import com.teacheros.modules.user.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -19,8 +20,9 @@ import java.util.UUID;
  * One thread per student (see V8 migration). Every method starts with
  * StudentAccessGuard#assertCanView, the same guard AttendanceService/
  * FeeService/AssessmentService already use - it's what lets a PARENT/
- * STUDENT only reach their own child's/own thread while staff can reach
- * any student in the tenant, without duplicating that check here.
+ * STUDENT only reach their own child's/own thread while tenant-wide staff
+ * (StaffRoles) can reach any student in the tenant, without duplicating that
+ * check here.
  */
 @Service
 public class MessageService {
@@ -44,7 +46,7 @@ public class MessageService {
     public List<MessageResponse> listThread(UUID studentId) {
         studentAccessGuard.assertCanView(studentId);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
-        boolean viewerIsStaff = isStaffRole(currentTenantProvider.getCurrentRole());
+        boolean viewerIsStaff = StaffRoles.isTenantWideStaff(currentTenantProvider.getCurrentRole());
 
         return messageRepository.findByTenantIdAndStudentIdOrderByCreatedAtAsc(tenantId, studentId).stream()
                 .map(m -> toResponse(m, viewerIsStaff))
@@ -60,7 +62,7 @@ public class MessageService {
         SenderRole senderRole;
         if (role.equals("PARENT")) {
             senderRole = SenderRole.PARENT;
-        } else if (isStaffRole(role)) {
+        } else if (StaffRoles.isTenantWideStaff(role)) {
             senderRole = SenderRole.STAFF;
         } else {
             // A student can read the thread (StudentAccessGuard let them
@@ -76,7 +78,7 @@ public class MessageService {
 
         Message message = new Message(tenantId, studentId, senderRole, senderName, request.body());
         message = messageRepository.save(message);
-        return toResponse(message, isStaffRole(role));
+        return toResponse(message, StaffRoles.isTenantWideStaff(role));
     }
 
     @Transactional
@@ -84,7 +86,7 @@ public class MessageService {
         studentAccessGuard.assertCanView(studentId);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
 
-        if (isStaffRole(currentTenantProvider.getCurrentRole())) {
+        if (StaffRoles.isTenantWideStaff(currentTenantProvider.getCurrentRole())) {
             messageRepository.markReadByStaff(tenantId, studentId);
         } else {
             messageRepository.markReadByParent(tenantId, studentId);
@@ -95,7 +97,7 @@ public class MessageService {
         studentAccessGuard.assertCanView(studentId);
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
 
-        long count = isStaffRole(currentTenantProvider.getCurrentRole())
+        long count = StaffRoles.isTenantWideStaff(currentTenantProvider.getCurrentRole())
                 ? messageRepository.countByTenantIdAndStudentIdAndReadByStaffFalse(tenantId, studentId)
                 : messageRepository.countByTenantIdAndStudentIdAndReadByParentFalse(tenantId, studentId);
         return new UnreadCountResponse(count);
@@ -107,12 +109,5 @@ public class MessageService {
                 : m.getSenderRole() == SenderRole.PARENT;
         return new MessageResponse(m.getId(), m.getSenderRole().name(), m.getSenderName(), m.getBody(), mine,
                 m.getCreatedAt());
-    }
-
-    private boolean isStaffRole(String role) {
-        return switch (role) {
-            case "OWNER", "TEACHER", "STAFF", "ADMIN" -> true;
-            default -> false;
-        };
     }
 }

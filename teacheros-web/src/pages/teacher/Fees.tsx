@@ -4,29 +4,41 @@ import type { Fee, Page, Student } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Modal, Row, Select, StatusPill } from '@/components/ui'
 import { Pagination, PAGE_SIZE } from '@/components/Pagination'
+import { StudentPicker } from '@/components/StudentPicker'
+import { ReceiptsModal } from '@/components/ReceiptsModal'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
 
 export function Fees() {
   const [data, setData] = useState<Page<Fee> | null>(null)
   const [page, setPage] = useState(0)
-  const [students, setStudents] = useState<Student[]>([])
+  // studentId -> name, resolved via /students/lookup for exactly the
+  // students on this page of fees (not a capped first-100 student list).
+  const [names, setNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [payFee, setPayFee] = useState<Fee | null>(null)
+  const [receiptFee, setReceiptFee] = useState<Fee | null>(null)
 
   function load(p = page) {
     setLoading(true)
     setError(null)
     api
       .get<Page<Fee>>('/api/v1/fees/pending', { page: p, size: PAGE_SIZE })
-      .then((res) => {
+      .then(async (res) => {
         // A payment can empty the last page - step back one page.
         if (res.content.length === 0 && p > 0) {
           setPage(p - 1)
           return
         }
         setData(res)
+        const ids = [...new Set(res.content.map((fee) => fee.studentId))]
+        if (ids.length === 0) {
+          setNames({})
+          return
+        }
+        const students = await api.get<Student[]>('/api/v1/students/lookup', { ids: ids.join(',') })
+        setNames(Object.fromEntries(students.map((s) => [s.id, s.fullName])))
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load fees.'))
       .finally(() => setLoading(false))
@@ -36,13 +48,7 @@ export function Fees() {
     load(page)
   }, [page])
 
-  // Names for the table and the "New fee" dropdown. Note: capped at 100
-  // students - a searchable student picker is the real fix beyond that.
-  useEffect(() => {
-    api.get<Page<Student>>('/api/v1/students', { size: 100 }).then((res) => setStudents(res.content))
-  }, [])
-
-  const studentName = (id: string) => students.find((s) => s.id === id)?.fullName ?? id.slice(0, 8)
+  const studentName = (id: string) => names[id] ?? id.slice(0, 8)
 
   return (
     <Layout>
@@ -76,9 +82,19 @@ export function Fees() {
                   <StatusPill status={f.status} />
                 </Cell>
                 <Cell>
-                  <button onClick={() => setPayFee(f)} className="text-sm text-slate hover:text-ink underline underline-offset-2">
-                    Record payment
-                  </button>
+                  <div className="flex items-center gap-3 whitespace-nowrap">
+                    <button onClick={() => setPayFee(f)} className="text-sm text-slate hover:text-ink underline underline-offset-2">
+                      Record payment
+                    </button>
+                    {f.amountPaid > 0 && (
+                      <button
+                        onClick={() => setReceiptFee(f)}
+                        className="text-sm text-slate hover:text-ink underline underline-offset-2"
+                      >
+                        Receipts
+                      </button>
+                    )}
+                  </div>
                 </Cell>
               </Row>
             ))}
@@ -95,7 +111,6 @@ export function Fees() {
 
       <NewFeeModal
         open={createOpen}
-        students={students}
         onClose={() => setCreateOpen(false)}
         onCreated={() => {
           setCreateOpen(false)
@@ -110,22 +125,21 @@ export function Fees() {
           load(page)
         }}
       />
+      <ReceiptsModal fee={receiptFee} onClose={() => setReceiptFee(null)} />
     </Layout>
   )
 }
 
 function NewFeeModal({
   open,
-  students,
   onClose,
   onCreated,
 }: {
   open: boolean
-  students: Student[]
   onClose: () => void
   onCreated: () => void
 }) {
-  const [studentId, setStudentId] = useState('')
+  const [student, setStudent] = useState<Student | null>(null)
   const [amountDue, setAmountDue] = useState('')
   const [dueDate, setDueDate] = useState(todayIso())
   const [error, setError] = useState<string | null>(null)
@@ -133,11 +147,15 @@ function NewFeeModal({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!student) {
+      setError('Choose a student.')
+      return
+    }
     setError(null)
     setSaving(true)
     try {
-      await api.post('/api/v1/fees', { studentId, amountDue: Number(amountDue), dueDate })
-      setStudentId('')
+      await api.post('/api/v1/fees', { studentId: student.id, amountDue: Number(amountDue), dueDate })
+      setStudent(null)
       setAmountDue('')
       onCreated()
     } catch (err) {
@@ -151,21 +169,14 @@ function NewFeeModal({
     <Modal open={open} onClose={onClose} title="New fee">
       {error && <ErrorBanner message={error} />}
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Select label="Student" value={studentId} onChange={(e) => setStudentId(e.target.value)} required>
-          <option value="">Choose a student</option>
-          {students.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.fullName}
-            </option>
-          ))}
-        </Select>
+        <StudentPicker value={student} onChange={setStudent} />
         <Input label="Amount due (₹)" type="number" min="1" step="0.01" value={amountDue} onChange={(e) => setAmountDue(e.target.value)} required />
         <Input label="Due date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
         <div className="flex gap-2 justify-end pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || !student}>
             {saving ? 'Creating…' : 'Create fee'}
           </Button>
         </div>

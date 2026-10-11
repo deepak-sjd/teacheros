@@ -21,6 +21,7 @@
         <java.version>21</java.version>
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.7.0</springdoc.version>
+        <shedlock.version>5.16.0</shedlock.version>
     </properties>
 
     <dependencies>
@@ -43,6 +44,18 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Student import: CSV and .xlsx parsing -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.12.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.3.0</version>
+        </dependency>
+
         <!-- Persistence -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -54,30 +67,42 @@
             <scope>runtime</scope>
         </dependency>
 
-
+        <!-- Scheduler locking (ShedLock) -->
         <dependency>
-        <groupId>com.twilio.sdk</groupId>
-        <artifactId>twilio</artifactId>
-        <version>10.5.1</version>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
         <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-mail</artifactId>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
 
-
+        <!-- Notifications: SMS + email -->
         <dependency>
-    <groupId>com.github.librepdf</groupId>
-    <artifactId>openpdf</artifactId>
-    <version>1.3.42</version>
-</dependency>
+            <groupId>com.twilio.sdk</groupId>
+            <artifactId>twilio</artifactId>
+            <version>10.5.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
 
+        <!-- PDF generation -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>1.3.42</version>
+        </dependency>
 
+        <!-- Payments -->
         <dependency>
             <groupId>com.razorpay</groupId>
             <artifactId>razorpay-java</artifactId>
             <version>1.4.6</version>
-            </dependency>
+        </dependency>
 
         <!-- Migrations -->
         <dependency>

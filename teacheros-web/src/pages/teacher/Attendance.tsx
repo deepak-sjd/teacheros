@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api'
+import { fetchAllPages } from '@/lib/fetchAllPages'
 import type { AttendanceStatus, Batch, Page, Student, StudentAttendanceRecord } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Input, Ledger, LedgerSkeleton, Row, Select } from '@/components/ui'
@@ -30,17 +31,32 @@ export function Attendance() {
 
   useEffect(() => {
     if (!batchId) return
+    // Guards against a slow response for a previously selected batch
+    // landing after the person has already switched to another one.
+    let cancelled = false
     setLoading(true)
     setSaved(false)
-    api
-      .get<Page<Student>>('/api/v1/students', { batchId, size: 100 })
-      .then((res) => {
-        setStudents(res.content)
+    setError(null)
+    fetchAllPages<Student>('/api/v1/students', { batchId })
+      .then((all) => {
+        if (cancelled) return
+        const sorted = [...all].sort((a, b) => a.fullName.localeCompare(b.fullName))
+        setStudents(sorted)
         const initial: Record<string, AttendanceStatus> = {}
-        res.content.forEach((s) => (initial[s.id] = 'PRESENT'))
+        sorted.forEach((s) => (initial[s.id] = 'PRESENT'))
         setStatuses(initial)
       })
-      .finally(() => setLoading(false))
+      .catch((err) => {
+        if (cancelled) return
+        setStudents([])
+        setError(err instanceof ApiError ? err.message : 'Could not load the students for this batch.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [batchId])
 
   function setStatus(studentId: string, status: AttendanceStatus) {
@@ -106,6 +122,9 @@ export function Attendance() {
         <EmptyState title="No students in this batch" description="Add students to this batch to mark attendance." />
       ) : (
         <>
+          <p className="text-sm text-slate mb-3">
+            {students.length} student{students.length === 1 ? '' : 's'} in this batch
+          </p>
           <Ledger columns={['Student', 'Status']}>
             {students.map((s) => (
               <Row key={s.id}>

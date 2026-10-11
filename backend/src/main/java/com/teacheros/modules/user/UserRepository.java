@@ -2,6 +2,8 @@ package com.teacheros.modules.user;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,4 +20,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * future requirement, not solved here.
      */
     Optional<User> findFirstByPhoneNumberAndActiveTrue(String phoneNumber);
+
+    List<User> findByTenantIdAndActiveTrueAndRoleIn(UUID tenantId, Collection<Role> roles);
 }

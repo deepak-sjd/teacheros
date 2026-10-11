@@ -1,5 +1,7 @@
 package com.teacheros.modules.timetable;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,6 +29,10 @@ public class TimetableSlot {
     private UUID batchId;
 
     // 1=Monday .. 7=Sunday (ISO-8601, matches java.time.DayOfWeek.getValue())
+    // 1=Monday .. 7=Sunday (ISO-8601, matches java.time.DayOfWeek.getValue()).
+    // The column is SMALLINT (V5), so say so - otherwise schema validation expects
+    // INTEGER.
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "day_of_week", nullable = false)
     private int dayOfWeek;
 

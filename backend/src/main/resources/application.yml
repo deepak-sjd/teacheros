@@ -1,3 +1,11 @@
+# ---------------------------------------------------------------------------
+# Core / shared config only. Everything module-specific lives in
+# config/modules/<module>.yml and is pulled in via spring.config.import below.
+#
+# Adding a module's config: create config/modules/<module>.yml, add ONE line
+# to the import list. Edit only your own file after that.
+# Environment-specific overrides stay in application-dev.yml / -prod.yml.
+# ---------------------------------------------------------------------------
 spring:
   application:
     name: teacheros-backend
@@ -5,32 +13,17 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
-  servlet:
-    multipart:
-      # Spring's own default is 1MB, well below our intended 20MB study
-      # material limit - this must be raised or every real upload fails
-      # before HomeworkMaterialController even sees the request. Kept in
-      # sync with app.storage.max-file-size-mb below (the servlet limit is
-      # the hard ceiling; app-level validation gives a cleaner error message
-      # before hitting it in the common case).
-      max-file-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
-      max-request-size: ${STORAGE_MAX_FILE_SIZE_MB:20}MB
+  config:
+    import:
+      - classpath:config/modules/ai.yml
+      - classpath:config/modules/auth.yml
+      - classpath:config/modules/notifications.yml
+      - classpath:config/modules/payments.yml
+      - classpath:config/modules/storage.yml
+      - classpath:config/modules/public.yml
+      - classpath:config/modules/security.yml
 
-  # Only used when app.email.provider=smtp. Left at harmless localhost
-  # defaults otherwise since SmtpEmailSender isn't even instantiated
-  # (@ConditionalOnProperty) when provider=log.
-  mail:
-    host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:587}
-    username: ${SMTP_USERNAME:}
-    password: ${SMTP_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-
+  # --- core: database ---
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/teacheros}
     username: ${DB_USERNAME:teacheros}
@@ -55,97 +48,27 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
+# --- core: app-wide ---
 app:
   timezone: Asia/Kolkata
-  jwt:
-    # Overridden per environment - never commit a real secret.
-    secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
-    access-token-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
-    refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
-  otp:
-    ttl-minutes: ${OTP_TTL_MINUTES:5}
-    # "log" prints the OTP to the application log instead of sending an SMS -
-    # used only in dev/test so nobody needs a real SMS provider to develop locally.
-    # "sms" sends via Twilio - requires app.sms.twilio.* below.
-    delivery-mode: ${OTP_DELIVERY_MODE:log}
-  sms:
-    # "log" (dev default) prints alert SMS instead of sending them.
-    # "twilio" sends real SMS via Twilio - also used for OTP delivery
-    # when app.otp.delivery-mode=sms, sharing the same Twilio account.
-    provider: ${SMS_PROVIDER:log}
-    twilio:
-      account-sid: ${TWILIO_ACCOUNT_SID:}
-      auth-token: ${TWILIO_AUTH_TOKEN:}
-      from-number: ${TWILIO_FROM_NUMBER:}
-  email:
-    # "log" (dev default) prints emails instead of sending them.
-    # "smtp" sends real email via Spring Mail - works with SES, SendGrid,
-    # Postmark, or a Gmail relay, depending on the host/port/credentials.
-    provider: ${EMAIL_PROVIDER:log}
-    from-address: ${EMAIL_FROM_ADDRESS:no-reply@teacheros.app}
-  ai:
-    # "log" (dev default) returns a canned placeholder reply instead of
-    # calling a real AI provider - lets the whole ask/save/display flow be
-    # developed and tested without any AI setup.
-    # "ollama" - FREE, self-hosted open-source model (Llama/Phi/Mistral/
-    # Gemma) via https://ollama.com running on your own server. No API key,
-    # no per-call cost, no third-party billing. Requires the model to
-    # already be pulled on the Ollama host (e.g. `ollama pull llama3.2`).
-    # "anthropic" calls the paid Anthropic API - requires ANTHROPIC_API_KEY
-    # and is billed per token. Only use this if you've decided the cost is
-    # worth it; "ollama" is the $0 option.
-    provider: ${AI_PROVIDER:log}
-    # Applies only to STUDENT-asked questions (see DoubtService) - protects
-    # against runaway load on whichever provider is configured, not a
-    # product-facing quota.
-    daily-question-limit: ${AI_DAILY_QUESTION_LIMIT:30}
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model: ${OLLAMA_MODEL:llama3.2}
-      timeout-seconds: ${OLLAMA_TIMEOUT_SECONDS:120}
-    anthropic:
-      api-key: ${ANTHROPIC_API_KEY:}
-      model: ${ANTHROPIC_MODEL:claude-sonnet-5}
-      # Budget for a tutoring answer - a short paragraph.
-      max-tokens: ${ANTHROPIC_MAX_TOKENS:500}
-      # Separate, larger budget for the AI Content Generator (a batch of
-      # MCQ questions or a page of study notes is a lot more text than a
-      # doubt-solver answer) - see AnthropicAiTutorClient#generateQuestions
-      # / #generateNotes.
-      content-max-tokens: ${ANTHROPIC_CONTENT_MAX_TOKENS:2000}
-  storage:
-    # Defaults point at the localhost-mapped MinIO port for a local `mvn
-    # spring-boot:run`. When running via docker-compose, STORAGE_ENDPOINT
-    # is overridden to the internal `minio:9000` hostname - see
-    # docker-compose.yml.
-    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
-    access-key: ${STORAGE_ACCESS_KEY:teacheros}
-    secret-key: ${STORAGE_SECRET_KEY:teacheros123}
-    bucket: ${STORAGE_BUCKET:teacheros-study-material}
-    # Max upload size for a single study material file. Deliberately
-    # conservative for MVP - notes/PDFs/images, not full lecture videos.
-    # Revisit if/when recorded-class video upload becomes a real requirement.
-    max-file-size-mb: ${STORAGE_MAX_FILE_SIZE_MB:20}
-  payment:
-    # "mock" (dev default) - no real gateway. PaymentController returns a
-    # fake order the frontend "pays" with its own "Simulate successful
-    # payment" button; no real money, no Razorpay account needed to
-    # develop/test the whole fee-payment flow.
-    # "razorpay" calls the real Razorpay API - requires
-    # app.payment.razorpay.key-id/key-secret below (an actual Razorpay
-    # account) and is billed per transaction per Razorpay's own pricing.
-    provider: ${PAYMENT_PROVIDER:mock}
-    currency: ${PAYMENT_CURRENCY:INR}
-    razorpay:
-      # Only read when app.payment.provider=razorpay - RazorpayPaymentGateway
-      # isn't even instantiated (@ConditionalOnProperty) when provider=mock,
-      # so these can stay blank otherwise.
-      key-id: ${RAZORPAY_KEY_ID:}
-      key-secret: ${RAZORPAY_KEY_SECRET:}
 
+  reminders:
+    enabled: ${REMINDERS_ENABLED:true}
+    fee-cron: "${REMINDERS_FEE_CRON:0 0 9 * * *}"
+    attendance-cron: "${REMINDERS_ATTENDANCE_CRON:0 0 18 * * *}"
+    days-before-due: ${REMINDERS_DAYS_BEFORE_DUE:2}
+    low-attendance-threshold: ${REMINDERS_LOW_ATTENDANCE_THRESHOLD:75}
+
+  video:
+    provider: ${VIDEO_PROVIDER:log}
+
+# --- core: server / ops ---
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  # Set to "framework" in prod behind a proxy so the rate limiter sees the real client IP.
+  # (Was wrongly nested under `app:` in the old file - it must be under `server:`.)
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
 
 management:
   endpoints:

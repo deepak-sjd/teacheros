@@ -30,6 +30,10 @@ import com.teacheros.modules.student.StudentRepository;
 import com.teacheros.modules.tenant.Tenant;
 import com.teacheros.modules.tenant.TenantRepository;
 import org.springframework.stereotype.Service;
+import com.teacheros.modules.reportcard.ReportCardService;
+import com.teacheros.modules.reportcard.dto.ReportCardDtos.SubjectResult;
+import com.teacheros.modules.reportcard.dto.ReportCardDtos.TermResultResponse;
+import java.util.List;
 
 import java.io.ByteArrayOutputStream;
 import java.io.UncheckedIOException;

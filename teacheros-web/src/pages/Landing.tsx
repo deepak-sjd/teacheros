@@ -1,7 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useReveal } from '@/lib/useReveal'
-import { Button, Input, Textarea } from '@/components/ui'
+import { Button, ErrorBanner, Input, Textarea } from '@/components/ui'
+import { api, ApiError } from '@/lib/api'
+import { getPublicSchoolSlug } from '@/lib/publicTenant'
+import type { PublicEnquiryRequest } from '@/lib/types'
 
 function Reveal({ children, className = '' }: { children: ReactNode; className?: string }) {
   const { ref, visible } = useReveal<HTMLDivElement>()
@@ -71,18 +74,48 @@ const STEPS = [
 // handleSubmit's body for a real api.post(...) call once one does.
 function ContactForm() {
   const [name, setName] = useState('')
-  const [contact, setContact] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
+  const [website, setWebsite] = useState('') // honeypot - humans never see this
+  const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setSubmitted(true)
+    setError(null)
+
+    const schoolSlug = getPublicSchoolSlug()
+    if (!schoolSlug) {
+      setError('This form isn\u2019t set up yet. Please contact us another way.')
+      return
+    }
+
+    const body: PublicEnquiryRequest = {
+      schoolSlug,
+      name,
+      phone,
+      email: email || undefined,
+      message: message || undefined,
+      source: 'WEBSITE',
+      website,
+    }
+
+    setSubmitting(true)
+    try {
+      await api.post('/api/v1/public/enquiries', body, false)
+      setSubmitted(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send your message. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (submitted) {
     return (
-      <div className="rounded-lg border border-line bg-white p-8 text-center animate-fade-in">
+      <div className="rounded-xl border border-line bg-white p-8 text-center animate-fade-in">
         <p className="font-display text-xl text-ink">Thanks, {name.split(' ')[0] || 'there'}!</p>
         <p className="text-slate text-sm mt-2">
           We&rsquo;ve got your message and will get back to you shortly.
@@ -92,23 +125,43 @@ function ContactForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-line bg-white p-6 sm:p-8 space-y-4 text-left">
-      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+    <form onSubmit={handleSubmit} className="relative rounded-xl border border-line bg-white p-6 sm:p-8 space-y-4 text-left shadow-sm">
+      {error && <ErrorBanner message={error} />}
+      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
       <Input
-        label="Email or phone"
-        value={contact}
-        onChange={(e) => setContact(e.target.value)}
-        placeholder="you@school.com"
+        label="Phone"
+        type="tel"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        placeholder="+91 98765 43210"
         required
+      />
+      <Input
+        label="Email (optional)"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="you@school.com"
       />
       <Textarea
         label="What would you like to know?"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Tell us a bit about your school or coaching center"
+        maxLength={2000}
       />
-      <Button type="submit" className="w-full justify-center">
-        Request a demo
+      <input
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden
+        value={website}
+        onChange={(e) => setWebsite(e.target.value)}
+        className="absolute -left-[9999px] h-0 w-0 opacity-0"
+      />
+      <Button type="submit" disabled={submitting} className="w-full">
+        {submitting ? 'Sending\u2026' : 'Request a demo'}
       </Button>
     </form>
   )

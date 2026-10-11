@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type {
   AppNotification,
   AttendanceSummaryResponse,
@@ -13,8 +14,9 @@ import type {
   StudyMaterial,
   TimetableSlot,
 } from '@/lib/types'
-import { Button, StatBlock, Ledger, Row, Cell, StatusPill, EmptyState, ErrorBanner } from '@/components/ui'
+import { Button, StatBlock, Ledger, Row, Cell, EmptyState, ErrorBanner } from '@/components/ui'
 import { MessageThread } from '@/components/MessageThread'
+import { FeeLedgerBreakdown } from '@/components/FeeLedgerBreakdown'
 import { formatCurrency, formatDate } from '@/lib/format'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -26,6 +28,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function StudentProfile({ studentId, showStudentHeader = true }: { studentId: string; showStudentHeader?: boolean }) {
+  const { role } = useAuth()
   const [student, setStudent] = useState<Student | null>(null)
   const [summary, setSummary] = useState<AttendanceSummaryResponse | null>(null)
   const [fees, setFees] = useState<Fee[]>([])
@@ -276,23 +279,7 @@ export function StudentProfile({ studentId, showStudentHeader = true }: { studen
       )}
 
       <h3 className="font-display text-xl text-ink mb-3">Fee ledger</h3>
-      {fees.length === 0 ? (
-        <EmptyState title="No fees on record" />
-      ) : (
-        <Ledger columns={['Due date', 'Amount due', 'Amount paid', 'Balance', 'Status']}>
-          {fees.map((f) => (
-            <Row key={f.id}>
-              <Cell>{formatDate(f.dueDate)}</Cell>
-              <Cell>{formatCurrency(f.amountDue)}</Cell>
-              <Cell>{formatCurrency(f.amountPaid)}</Cell>
-              <Cell className="font-medium">{formatCurrency(f.amountDue - f.amountPaid)}</Cell>
-              <Cell>
-                <StatusPill status={f.status} />
-              </Cell>
-            </Row>
-          ))}
-        </Ledger>
-      )}
+      <FeeLedgerBreakdown studentId={studentId} canWaive={role === 'OWNER' || role === 'ADMIN' || role === 'ACCOUNTANT'} />
     </div>
   )
 }

@@ -46,6 +46,33 @@ public class Student {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    // ---- Profile extras (V120). All optional. ----
+
+    @Column(name = "previous_school")
+    private String previousSchool;
+
+    // SENSITIVE - never include in toString/logging/audit metadata, never
+    // return from list endpoints. See StudentProfileService.
+    @Column(name = "medical_notes", columnDefinition = "TEXT")
+    private String medicalNotes;
+
+    @Column(name = "blood_group", length = 5)
+    private String bloodGroup;
+
+    @Column(columnDefinition = "TEXT")
+    private String address;
+
+    // Contact details only. A second guardian phone does NOT grant PARENT
+    // login/access - StudentAccessGuard still matches on guardian_phone.
+    @Column(name = "guardian2_name")
+    private String guardian2Name;
+
+    @Column(name = "guardian2_phone", length = 20)
+    private String guardian2Phone;
+
+    @Column(name = "guardian2_relation", length = 50)
+    private String guardian2Relation;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 

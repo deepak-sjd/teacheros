@@ -4,6 +4,7 @@ import com.teacheros.common.exception.ResourceNotFoundException;
 import com.teacheros.common.tenant.CurrentTenantProvider;
 import com.teacheros.modules.student.Student;
 import com.teacheros.modules.student.StudentRepository;
+import com.teacheros.modules.user.StaffRoles;
 import com.teacheros.modules.user.User;
 import com.teacheros.modules.user.UserRepository;
 import org.springframework.stereotype.Component;
@@ -18,9 +19,11 @@ import java.util.UUID;
  * built, rather than each writing their own parent/student visibility
  * check).
  *
- * Staff roles: tenant isolation alone already scopes them correctly, this
- * guard is a no-op. PARENT/STUDENT: allowed only if they have at least one
- * linked student actually enrolled in that batch.
+ * Tenant-wide staff (StaffRoles): tenant isolation alone already scopes them
+ * correctly, this guard is a no-op. ACCOUNTANT/COUNSELLOR are not in that set
+ * and get a 404 here (they have no linked student). PARENT/STUDENT: allowed
+ * only if they have at least one linked student actually enrolled in that
+ * batch.
  */
 @Component
 public class BatchAccessGuard {
@@ -47,7 +50,7 @@ public class BatchAccessGuard {
     public void assertCanView(UUID batchId) {
         String role = currentTenantProvider.getCurrentRole();
 
-        if (isStaffRole(role)) {
+        if (StaffRoles.isTenantWideStaff(role)) {
             return;
         }
 
@@ -70,12 +73,5 @@ public class BatchAccessGuard {
         if (!allowed) {
             throw new ResourceNotFoundException("Batch", batchId);
         }
-    }
-
-    private boolean isStaffRole(String role) {
-        return switch (role) {
-            case "OWNER", "TEACHER", "STAFF", "ADMIN" -> true;
-            default -> false;
-        };
     }
 }

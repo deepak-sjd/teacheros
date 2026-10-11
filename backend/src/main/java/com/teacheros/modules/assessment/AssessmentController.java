@@ -41,10 +41,13 @@ public class AssessmentController {
         return ResponseEntity.ok(assessmentService.update(id, request));
     }
 
+    // Returns 409 TEST_HAS_SUBMISSIONS if students have already submitted an
+    // attempt, unless the caller re-sends with ?confirm=true.
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        assessmentService.delete(id);
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+            @RequestParam(defaultValue = "false") boolean confirm) {
+        assessmentService.delete(id, confirm);
         return ResponseEntity.noContent().build();
     }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { StudentSectionShell } from '@/components/StudentSectionShell'
 import { EmptyState, Ledger, Row, Cell, StatusPill, Button, LedgerSkeleton } from '@/components/ui'
 import { PayFeeModal } from '@/components/PayFeeModal'
+import { ReceiptsModal } from '@/components/ReceiptsModal'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { Fee, Student } from '@/lib/types'
@@ -9,6 +10,7 @@ import type { Fee, Student } from '@/lib/types'
 function FeeLedger({ student }: { student: Student }) {
   const [fees, setFees] = useState<Fee[] | null>(null)
   const [payingFee, setPayingFee] = useState<Fee | null>(null)
+  const [receiptFee, setReceiptFee] = useState<Fee | null>(null)
 
   function load() {
     setFees(null)
@@ -35,11 +37,18 @@ function FeeLedger({ student }: { student: Student }) {
                 <StatusPill status={f.status} />
               </Cell>
               <Cell>
-                {balance > 0 && (
-                  <Button variant="secondary" onClick={() => setPayingFee(f)}>
-                    Pay now
-                  </Button>
-                )}
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  {balance > 0 && (
+                    <Button variant="secondary" onClick={() => setPayingFee(f)}>
+                      Pay now
+                    </Button>
+                  )}
+                  {f.amountPaid > 0 && (
+                    <Button variant="ghost" onClick={() => setReceiptFee(f)}>
+                      Receipts
+                    </Button>
+                  )}
+                </div>
               </Cell>
             </Row>
           )
@@ -55,6 +64,7 @@ function FeeLedger({ student }: { student: Student }) {
           load()
         }}
       />
+      <ReceiptsModal fee={receiptFee} onClose={() => setReceiptFee(null)} />
     </>
   )
 }

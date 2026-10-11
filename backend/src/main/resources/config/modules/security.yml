@@ -1,0 +1,12 @@
+# Module: security (CORS + rate limiting / OTP abuse protection).
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+  security:
+    rate-limiter: memory   # swap for a shared-store implementation later
+    otp:
+      request-limit: 5          # code requests per phone per window
+      ip-request-limit: 20      # code requests per IP per window
+      request-window-minutes: 10
+      verify-max-failures: 5    # wrong codes before the phone is locked
+      lockout-minutes: 15

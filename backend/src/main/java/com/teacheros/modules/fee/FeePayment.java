@@ -44,6 +44,11 @@ public class FeePayment {
     @Column(name = "gateway_payment_id")
     private String gatewayPaymentId;
 
+    // Assigned by the database (fee_receipt_seq default), never by the app.
+    // Null on a freshly-saved entity until it is re-read.
+    @Column(name = "receipt_number", insertable = false, updatable = false)
+    private Long receiptNumber;
+
     @PrePersist
     void onCreate() {
         if (this.paidAt == null) {

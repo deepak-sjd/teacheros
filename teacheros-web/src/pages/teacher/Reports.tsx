@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, Cell, EmptyState, ErrorBanner, Ledger, LedgerSkeleton, Row, Select, StatBlock, StatBlockSkeleton } from '@/components/ui'
 import { api, ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { STAFF_ROLES } from '@/lib/nav/types'
 import type { Batch, BatchRanking, Page, ReportSummary } from '@/lib/types'
 import { formatCurrency, formatDate, todayIso } from '@/lib/format'
 
@@ -33,6 +35,10 @@ function rangeFor(period: Period): { from: string; to: string } {
 }
 
 export function ReportsPage() {
+  const { role } = useAuth()
+  // The class leaderboard names students and shows their marks, so the backend
+  // keeps it to tenant-wide staff. ACCOUNTANT sees the report but not this card.
+  const canSeeRanking = role !== null && STAFF_ROLES.includes(role)
   const [batches, setBatches] = useState<Batch[]>([])
   const [batchId, setBatchId] = useState('')
   const [period, setPeriod] = useState<Period>('month')
@@ -58,7 +64,7 @@ export function ReportsPage() {
   // of several), so it only loads once a specific batch is selected -
   // "All batches" clears it rather than showing something misleading.
   useEffect(() => {
-    if (!batchId) {
+    if (!batchId || !canSeeRanking) {
       setRanking(null)
       return
     }
@@ -68,7 +74,7 @@ export function ReportsPage() {
       .then(setRanking)
       .catch(() => setRanking(null))
       .finally(() => setRankingLoading(false))
-  }, [batchId])
+  }, [batchId, canSeeRanking])
 
   function handlePeriodChange(next: Period) {
     setPeriod(next)
@@ -252,7 +258,7 @@ export function ReportsPage() {
             )}
           </section>
 
-          {batchId && (
+          {batchId && canSeeRanking && (
             <section>
               <h3 className="font-display text-xl text-ink mb-3">Class ranking</h3>
               {rankingLoading ? (
