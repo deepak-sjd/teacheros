@@ -1,4 +1,4 @@
-export type NotificationType = 'LOW_ATTENDANCE' | 'FEE_DUE' | 'FEE_OVERDUE'
+export type NotificationType = 'LOW_ATTENDANCE' | 'FEE_DUE' | 'FEE_OVERDUE' | 'ABSENT' | 'LEAVE_DECISION'
 
 export interface AppNotification {
   id: string

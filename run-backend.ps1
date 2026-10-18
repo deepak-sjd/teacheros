@@ -9,6 +9,7 @@ $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 $env:DB_URL = "jdbc:postgresql://localhost:5433/teacheros"
 $env:DB_USERNAME = "teacheros"
 $env:DB_PASSWORD = "teacheros"
+$env:CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 # Object storage (MinIO locally) - localhost:9000 is the mapped host port,
 # same pattern as DB_URL above. If you're running the backend itself

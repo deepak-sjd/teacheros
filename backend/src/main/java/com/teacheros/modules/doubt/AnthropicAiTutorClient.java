@@ -1,5 +1,7 @@
 package com.teacheros.modules.doubt;
 
+import com.teacheros.modules.ai.AiTokenReporter;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -345,6 +347,10 @@ public class AnthropicAiTutorClient implements AiTutorClient {
     private String extractText(String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode usage = root.path("usage");
+            if (usage.isObject()) {
+                AiTokenReporter.report(usage.path("input_tokens").asInt(0), usage.path("output_tokens").asInt(0));
+            }
             JsonNode content = root.path("content");
             StringBuilder text = new StringBuilder();
             if (content.isArray()) {

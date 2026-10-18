@@ -1,0 +1,1930 @@
+
+===== backend\src\main\resources\db\migration\V20__tenant_config.sql =====
+CREATE TABLE tenant_config (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL REFERENCES tenants(id),
+    tenant_type     VARCHAR(20) NOT NULL DEFAULT 'COACHING',
+    enabled_modules JSONB NOT NULL DEFAULT '[]'::jsonb,
+    locale          VARCHAR(20) NOT NULL DEFAULT 'en-IN',
+    timezone        VARCHAR(50) NOT NULL DEFAULT 'Asia/Kolkata',
+    primary_color   VARCHAR(7),
+    secondary_color VARCHAR(7),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_tenant_config_tenant UNIQUE (tenant_id),
+    CONSTRAINT ck_tenant_config_type CHECK (tenant_type IN ('COACHING', 'SCHOOL'))
+);
+
+-- One row per existing tenant, defaulting to COACHING with every current
+-- module on. Keep this list in sync with TenantModules.ALL.
+INSERT INTO tenant_config (tenant_id, enabled_modules)
+SELECT t.id,
+       '["ATTENDANCE","FEES","HOMEWORK","TIMETABLE","STUDY_MATERIAL","TESTS","ALERTS","MESSAGES","DOUBTS","REPORTS","ANALYTICS"]'::jsonb
+FROM tenants t
+ON CONFLICT (tenant_id) DO NOTHING;
+
+===== backend\src\main\resources\db\migration\V80__exam_terms_grade_scales.sql =====
+-- V80: Exam terms, grade scales, report card remarks (Dev 8, Task 3).
+--
+-- Term RESULTS are never stored - they are computed on demand from `marks`
+-- (same rule as attendance %, ReportService, StudyPlanService). A test belongs
+-- to a term when its test_date falls inside the term's [start_date, end_date].
+-- Only the teacher's free-text remark per (student, term) is stored.
+--
+-- academic_year_id is deliberately a plain nullable UUID with NO foreign key:
+-- Dev 2's academic-year table did not exist when this was written. Add the FK
+-- in a follow-up migration once it does.
+
+CREATE TABLE exam_terms (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        UUID NOT NULL REFERENCES tenants(id),
+    academic_year_id UUID,
+    name             VARCHAR(100) NOT NULL,
+    start_date       DATE NOT NULL,
+    end_date         DATE NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_exam_terms_dates CHECK (end_date >= start_date)
+);
+CREATE INDEX idx_exam_terms_tenant_start ON exam_terms(tenant_id, start_date);
+
+-- One row per grade band. A tenant with NO rows here uses the CBSE-style
+-- defaults held in GradeScaleService; saving a scale persists its own bands.
+CREATE TABLE grade_scales (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id      UUID NOT NULL REFERENCES tenants(id),
+    grade          VARCHAR(10) NOT NULL,
+    min_percentage NUMERIC(5, 2) NOT NULL,
+    max_percentage NUMERIC(5, 2) NOT NULL,
+    remark         VARCHAR(100),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_grade_scales_tenant_grade UNIQUE (tenant_id, grade),
+    CONSTRAINT chk_grade_scales_range CHECK (
+        min_percentage >= 0 AND max_percentage <= 100 AND min_percentage <= max_percentage)
+);
+CREATE INDEX idx_grade_scales_tenant ON grade_scales(tenant_id, min_percentage);
+
+CREATE TABLE report_card_remarks (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id          UUID NOT NULL REFERENCES tenants(id),
+    student_id         UUID NOT NULL REFERENCES students(id),
+    exam_term_id       UUID NOT NULL REFERENCES exam_terms(id),
+    remark             VARCHAR(1000) NOT NULL,
+    created_by_user_id UUID NOT NULL REFERENCES users(id),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_report_card_remarks UNIQUE (tenant_id, student_id, exam_term_id)
+);
+CREATE INDEX idx_report_card_remarks_term ON report_card_remarks(tenant_id, exam_term_id);
+
+===== backend\src\main\resources\db\migration\V110__fee_structures.sql =====
+-- V110: Fee heads, structures and instalment plans (Dev 12, Task 1).
+--
+-- A structure assigned to a student generates ordinary `fees` rows (one per
+-- instalment), so the existing ledger / payment / overdue code keeps working.
+-- Nothing existing is altered: only nullable or defaulted columns are added
+-- to `fees`.
+
+CREATE TABLE fee_heads (
+    id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id                   UUID NOT NULL REFERENCES tenants(id),
+    name                        VARCHAR(100) NOT NULL,
+    code                        VARCHAR(30),
+    sibling_concession_eligible BOOLEAN NOT NULL DEFAULT true,
+    is_active                   BOOLEAN NOT NULL DEFAULT true,
+    sort_order                  INT NOT NULL DEFAULT 0,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_fee_heads_tenant_name UNIQUE (tenant_id, name)
+);
+
+CREATE TABLE instalment_plans (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id             UUID NOT NULL REFERENCES tenants(id),
+    name                  VARCHAR(100) NOT NULL,
+    number_of_instalments INT NOT NULL CHECK (number_of_instalments >= 1),
+    is_active             BOOLEAN NOT NULL DEFAULT true,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_instalment_plans_tenant_name UNIQUE (tenant_id, name)
+);
+
+CREATE TABLE instalment_plan_items (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     UUID NOT NULL REFERENCES tenants(id),
+    plan_id       UUID NOT NULL REFERENCES instalment_plans(id),
+    instalment_no INT NOT NULL CHECK (instalment_no >= 1),
+    due_date      DATE NOT NULL,
+    percentage    NUMERIC(5, 2) NOT NULL CHECK (percentage > 0 AND percentage <= 100),
+    CONSTRAINT uq_instalment_plan_items UNIQUE (plan_id, instalment_no)
+);
+CREATE INDEX idx_instalment_plan_items_plan ON instalment_plan_items(tenant_id, plan_id);
+
+-- Scope: a batch (the app's "class"), a grade label, or both. The assign
+-- wizard can also target explicit students regardless of scope.
+CREATE TABLE fee_structures (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     UUID NOT NULL REFERENCES tenants(id),
+    name          VARCHAR(150) NOT NULL,
+    academic_year VARCHAR(9) NOT NULL,           -- e.g. 2026-27
+    grade         VARCHAR(50),
+    batch_id      UUID REFERENCES batches(id),
+    plan_id       UUID NOT NULL REFERENCES instalment_plans(id),
+    is_active     BOOLEAN NOT NULL DEFAULT true,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_fee_structures_tenant_name_year UNIQUE (tenant_id, name, academic_year)
+);
+CREATE INDEX idx_fee_structures_tenant ON fee_structures(tenant_id);
+
+CREATE TABLE fee_structure_items (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id    UUID NOT NULL REFERENCES tenants(id),
+    structure_id UUID NOT NULL REFERENCES fee_structures(id),
+    head_id      UUID NOT NULL REFERENCES fee_heads(id),
+    amount       NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+    CONSTRAINT uq_fee_structure_items UNIQUE (structure_id, head_id)
+);
+CREATE INDEX idx_fee_structure_items_structure ON fee_structure_items(tenant_id, structure_id);
+
+-- Additive changes to the existing fees table. Every new column is nullable
+-- or has a default, so existing rows and the existing Fee/Payment code are
+-- unaffected (line_type defaults to STANDARD, discount_amount to 0).
+--   fee_head_id    set only when the structure has exactly one head
+--   gross_amount   amount before discounts (amount_due = gross - discount)
+--   parent_fee_id  for LATE_FEE rows: the overdue instalment charged
+ALTER TABLE fees
+    ADD COLUMN fee_head_id     UUID REFERENCES fee_heads(id),
+    ADD COLUMN structure_id    UUID REFERENCES fee_structures(id),
+    ADD COLUMN instalment_no   INT,
+    ADD COLUMN line_type       VARCHAR(20) NOT NULL DEFAULT 'STANDARD',
+    ADD COLUMN gross_amount    NUMERIC(10, 2),
+    ADD COLUMN discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    ADD COLUMN parent_fee_id   UUID REFERENCES fees(id);
+
+-- Idempotency: one fee per (student, structure, instalment).
+CREATE UNIQUE INDEX uq_fees_structure_instalment
+    ON fees (tenant_id, student_id, structure_id, instalment_no)
+    WHERE line_type = 'INSTALMENT' AND structure_id IS NOT NULL;
+
+-- Late fee is charged at most once per overdue instalment.
+CREATE UNIQUE INDEX uq_fees_late_fee_parent
+    ON fees (parent_fee_id)
+    WHERE line_type = 'LATE_FEE';
+
+CREATE INDEX idx_fees_tenant_structure ON fees (tenant_id, structure_id) WHERE structure_id IS NOT NULL;
+CREATE INDEX idx_fees_tenant_due ON fees (tenant_id, due_date);
+
+-- Per-head breakdown of a generated fee. Payments are recorded against the
+-- fee (not the head), so the "collection per fee head" report allocates each
+-- payment across these lines pro rata to (gross - discount).
+CREATE TABLE fee_line_items (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL REFERENCES tenants(id),
+    fee_id          UUID NOT NULL REFERENCES fees(id),
+    head_id         UUID NOT NULL REFERENCES fee_heads(id),
+    gross_amount    NUMERIC(10, 2) NOT NULL,
+    discount_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    CONSTRAINT uq_fee_line_items UNIQUE (fee_id, head_id)
+);
+CREATE INDEX idx_fee_line_items_fee ON fee_line_items(tenant_id, fee_id);
+
+===== backend\src\main\resources\db\migration\V120__student_profile_and_documents.sql =====
+-- V120: Student profile extras + documents (Dev 13, Task 1).
+--
+-- All new student columns are nullable so existing create/edit flows keep
+-- working untouched. medical_notes is SENSITIVE: it is only ever returned
+-- by the dedicated profile endpoint (never by list endpoints) and only to
+-- staff or the student's own guardian - see StudentProfileService.
+ALTER TABLE students ADD COLUMN previous_school   VARCHAR(255);
+ALTER TABLE students ADD COLUMN medical_notes     TEXT;
+ALTER TABLE students ADD COLUMN blood_group       VARCHAR(5);
+ALTER TABLE students ADD COLUMN address           TEXT;
+ALTER TABLE students ADD COLUMN guardian2_name     VARCHAR(255);
+ALTER TABLE students ADD COLUMN guardian2_phone    VARCHAR(20);
+ALTER TABLE students ADD COLUMN guardian2_relation VARCHAR(50);
+
+-- File bytes live in object storage; this table holds the reference
+-- (object_key) plus display metadata, same shape as study_material.
+CREATE TABLE student_documents (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(id),
+    student_id          UUID NOT NULL REFERENCES students(id),
+    doc_type            VARCHAR(30) NOT NULL,
+    title               VARCHAR(255) NOT NULL,
+    object_key          VARCHAR(500) NOT NULL,
+    original_filename   VARCHAR(255) NOT NULL,
+    content_type        VARCHAR(100) NOT NULL,
+    file_size_bytes     BIGINT NOT NULL,
+    uploaded_by_user_id UUID NOT NULL REFERENCES users(id),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_student_documents_student ON student_documents(tenant_id, student_id, created_at);
+
+===== backend\src\main\resources\db\migration\V100__roles_and_permissions.sql =====
+-- V100: Roles and permissions (Dev 11, Task 1).
+--
+-- role_permission_defaults is global (not tenant-owned): the template copied
+-- into role_permissions for every tenant. role_permissions is tenant-owned
+-- and is what PermissionService actually checks. No row = denied.
+--
+-- OWNER is short-circuited to "always allowed" in PermissionService, so an
+-- edited matrix can never lock the owner out; OWNER rows exist only so the
+-- (later) permissions matrix view has something to show.
+
+CREATE TABLE role_permission_defaults (
+    role        VARCHAR(30) NOT NULL,
+    permission  VARCHAR(50) NOT NULL,
+    PRIMARY KEY (role, permission)
+);
+
+-- The four existing staff roles keep today's behaviour: everything their
+-- hard-coded hasAnyRole('OWNER','TEACHER','STAFF','ADMIN') lists allowed.
+INSERT INTO role_permission_defaults (role, permission)
+SELECT r.role, p.permission
+FROM (VALUES ('OWNER'), ('ADMIN'), ('TEACHER'), ('STAFF')) AS r(role)
+CROSS JOIN (VALUES
+    ('FEES_VIEW'), ('FEES_EDIT'),
+    ('MARKS_VIEW_ALL'), ('MARKS_EDIT'),
+    ('ATTENDANCE_MARK'),
+    ('REPORTS_VIEW'), ('ANALYTICS_VIEW'),
+    ('STUDENTS_VIEW'), ('STUDENTS_EDIT'),
+    ('BATCHES_VIEW'), ('BATCHES_EDIT'),
+    ('HOMEWORK_EDIT'), ('TIMETABLE_EDIT'), ('STUDY_MATERIAL_EDIT'),
+    ('ALERTS_SEND'), ('CONTENT_GENERATE')
+) AS p(permission);
+
+-- New capability, new roles only. TEACHER deliberately does not get it.
+INSERT INTO role_permission_defaults (role, permission) VALUES
+    ('OWNER', 'LEADS_MANAGE'),
+    ('ADMIN', 'LEADS_MANAGE'),
+    ('STAFF', 'LEADS_MANAGE'),
+    ('COUNSELLOR', 'LEADS_MANAGE'),
+    ('COUNSELLOR', 'BATCHES_VIEW'),
+    -- Accountant: fees + reports, plus the student/batch lookups the Fees and
+    -- Reports pages call. No marks, homework, attendance or content.
+    ('ACCOUNTANT', 'FEES_VIEW'),
+    ('ACCOUNTANT', 'FEES_EDIT'),
+    ('ACCOUNTANT', 'REPORTS_VIEW'),
+    ('ACCOUNTANT', 'STUDENTS_VIEW'),
+    ('ACCOUNTANT', 'BATCHES_VIEW');
+
+CREATE TABLE role_permissions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   UUID NOT NULL REFERENCES tenants(id),
+    role        VARCHAR(30) NOT NULL,
+    permission  VARCHAR(50) NOT NULL,
+    CONSTRAINT uq_role_permissions UNIQUE (tenant_id, role, permission)
+);
+
+-- Seed every tenant that already exists. New tenants are seeded by
+-- AuthService.provisionNewTeacherAccount via PermissionService#seedDefaults.
+INSERT INTO role_permissions (tenant_id, role, permission)
+SELECT t.id, d.role, d.permission
+FROM tenants t
+CROSS JOIN role_permission_defaults d;
+
+===== backend\src\main\java\com\teacheros\modules\tenant\TenantConfig.java =====
+package com.teacheros.modules.tenant;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Entity
+@Table(name = "tenant_config")
+@Getter
+@Setter
+@NoArgsConstructor
+public class TenantConfig {
+
+    @Id
+    @GeneratedValue
+    private UUID id;
+
+    @Column(name = "tenant_id", nullable = false, updatable = false, unique = true)
+    private UUID tenantId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tenant_type", nullable = false, length = 20)
+    private TenantType tenantType = TenantType.COACHING;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "enabled_modules", nullable = false, columnDefinition = "jsonb")
+    private List<String> enabledModules = new ArrayList<>();
+
+    @Column(nullable = false, length = 20)
+    private String locale = "en-IN";
+
+    @Column(nullable = false, length = 50)
+    private String timezone = "Asia/Kolkata";
+
+    @Column(name = "primary_color", length = 7)
+    private String primaryColor;
+
+    @Column(name = "secondary_color", length = 7)
+    private String secondaryColor;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        Instant now = Instant.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        this.updatedAt = Instant.now();
+    }
+
+    public TenantConfig(UUID tenantId, TenantType tenantType, List<String> enabledModules) {
+        this.tenantId = tenantId;
+        this.tenantType = tenantType;
+        this.enabledModules = new ArrayList<>(enabledModules);
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\tenant\TenantConfigService.java =====
+package com.teacheros.modules.tenant;
+
+import com.teacheros.common.exception.ApiException;
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.tenant.dto.TenantDtos.TenantConfigResponse;
+import com.teacheros.modules.tenant.dto.TenantDtos.UpdateTenantConfigRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.DateTimeException;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The one place other modules read tenant type / enabled modules from:
+ * TenantConfigService#get() for the current request's tenant,
+ * #isModuleEnabled(key) for a quick check, #getFor(tenantId) for
+ * background jobs that have no request context.
+ */
+@Service
+public class TenantConfigService {
+
+    private final TenantConfigRepository tenantConfigRepository;
+    private final CurrentTenantProvider currentTenantProvider;
+
+    public TenantConfigService(TenantConfigRepository tenantConfigRepository,
+            CurrentTenantProvider currentTenantProvider) {
+        this.tenantConfigRepository = tenantConfigRepository;
+        this.currentTenantProvider = currentTenantProvider;
+    }
+
+    @Transactional
+    public TenantConfigResponse get() {
+        return toResponse(getOrCreate(currentTenantProvider.getCurrentTenantId()));
+    }
+
+    /**
+     * For scheduled jobs only - request code must use get(), never a
+     * client-supplied id.
+     */
+    @Transactional
+    public TenantConfigResponse getFor(UUID tenantId) {
+        return toResponse(getOrCreate(tenantId));
+    }
+
+    public boolean isModuleEnabled(String moduleKey) {
+        return get().enabledModules().contains(moduleKey);
+    }
+
+    public ZoneId zone() {
+        return ZoneId.of(get().timezone());
+    }
+
+    /**
+     * Called at signup (AuthService.provisionNewTeacherAccount) inside the
+     * same transaction that creates the tenant, so a tenant never exists
+     * without a config row. Takes the id explicitly because there's no
+     * authenticated principal yet at that point.
+     */
+    @Transactional
+    public TenantConfigResponse createDefault(UUID tenantId) {
+        return toResponse(tenantConfigRepository.save(newDefault(tenantId)));
+    }
+
+    @Transactional
+    public TenantConfigResponse update(UpdateTenantConfigRequest request) {
+        TenantConfig config = getOrCreate(currentTenantProvider.getCurrentTenantId());
+
+        if (request.tenantType() != null) {
+            config.setTenantType(parseType(request.tenantType()));
+        }
+        if (request.enabledModules() != null) {
+            config.setEnabledModules(validateModules(request.enabledModules()));
+        }
+        if (request.locale() != null) {
+            config.setLocale(request.locale());
+        }
+        if (request.timezone() != null) {
+            config.setTimezone(validateZone(request.timezone()));
+        }
+        // null = unchanged, "" = clear
+        if (request.primaryColor() != null) {
+            config.setPrimaryColor(blankToNull(request.primaryColor()));
+        }
+        if (request.secondaryColor() != null) {
+            config.setSecondaryColor(blankToNull(request.secondaryColor()));
+        }
+        return toResponse(tenantConfigRepository.save(config));
+    }
+
+    // Self-heal: the V20 backfill and signup hook mean a row should always
+    // exist, but a read must never fail because one is missing.
+    private TenantConfig getOrCreate(UUID tenantId) {
+        return tenantConfigRepository.findByTenantId(tenantId)
+                .orElseGet(() -> tenantConfigRepository.save(newDefault(tenantId)));
+    }
+
+    private TenantConfig newDefault(UUID tenantId) {
+        return new TenantConfig(tenantId, TenantType.COACHING, TenantModules.defaultsFor(TenantType.COACHING));
+    }
+
+    private TenantType parseType(String value) {
+        try {
+            return TenantType.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_TYPE",
+                    "tenantType must be COACHING or SCHOOL");
+        }
+    }
+
+    private List<String> validateModules(List<String> modules) {
+        LinkedHashSet<String> cleaned = new LinkedHashSet<>();
+        for (String m : modules) {
+            String key = m == null ? "" : m.trim().toUpperCase();
+            if (!TenantModules.ALL.contains(key)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_MODULE", "Unknown module: " + m);
+            }
+            cleaned.add(key);
+        }
+        return new ArrayList<>(cleaned);
+    }
+
+    private String validateZone(String zone) {
+        try {
+            return ZoneId.of(zone.trim()).getId();
+        } catch (DateTimeException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_TIMEZONE", "Unknown timezone: " + zone);
+        }
+    }
+
+    private String blankToNull(String s) {
+        return s.isBlank() ? null : s.trim();
+    }
+
+    private TenantConfigResponse toResponse(TenantConfig c) {
+        return new TenantConfigResponse(c.getTenantType(), List.copyOf(c.getEnabledModules()), c.getLocale(),
+                c.getTimezone(), c.getPrimaryColor(), c.getSecondaryColor());
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\tenant\TenantType.java =====
+package com.teacheros.modules.tenant;
+
+public enum TenantType {
+    COACHING,
+    SCHOOL
+}
+
+===== backend\src\main\java\com\teacheros\modules\tenant\TenantModules.java =====
+package com.teacheros.modules.tenant;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * The contract for module keys stored in tenant_config.enabled_modules.
+ * A dev adding a new toggleable module appends its key to ALL in the same
+ * PR as the feature. Unknown keys are rejected on PATCH so a typo can't
+ * silently disable something.
+ */
+public final class TenantModules {
+
+    private TenantModules() {
+    }
+
+    public static final Set<String> ALL = Set.copyOf(new LinkedHashSet<>(List.of(
+            "ATTENDANCE", "FEES", "HOMEWORK", "TIMETABLE", "STUDY_MATERIAL", "TESTS",
+            "ALERTS", "MESSAGES", "DOUBTS", "REPORTS", "ANALYTICS")));
+
+    // Same set for both types today; SCHOOL-only modules get added by
+    // whoever builds them.
+    public static List<String> defaultsFor(TenantType type) {
+        return List.of("ATTENDANCE", "FEES", "HOMEWORK", "TIMETABLE", "STUDY_MATERIAL", "TESTS",
+                "ALERTS", "MESSAGES", "DOUBTS", "REPORTS", "ANALYTICS");
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\student\Student.java =====
+package com.teacheros.modules.student;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "students")
+@Getter
+@Setter
+@NoArgsConstructor
+public class Student {
+
+    @Id
+    @GeneratedValue
+    private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(name = "batch_id")
+    private UUID batchId;
+
+    @Column(name = "full_name", nullable = false)
+    private String fullName;
+
+    private String grade;
+
+    @Column(name = "guardian_phone", nullable = false)
+    private String guardianPhone;
+
+    // Optional - lets low-attendance/fee alerts be emailed to the guardian,
+    // in addition to the in-app notification. Nullable by design; most
+    // schools will only have the phone number on file.
+    @Column(name = "guardian_email")
+    private String guardianEmail;
+
+    // Optional - lets the student log in and view their own attendance/fees
+    // directly, separately from the guardian_phone their parent uses. Most
+    // students won't have this set, especially younger ones - that's fine,
+    // it's nullable by design (see V2 migration).
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
+    // ---- Profile extras (V120). All optional. ----
+
+    @Column(name = "previous_school")
+    private String previousSchool;
+
+    // SENSITIVE - never include in toString/logging/audit metadata, never
+    // return from list endpoints. See StudentProfileService.
+    @Column(name = "medical_notes", columnDefinition = "TEXT")
+    private String medicalNotes;
+
+    @Column(name = "blood_group", length = 5)
+    private String bloodGroup;
+
+    @Column(columnDefinition = "TEXT")
+    private String address;
+
+    // Contact details only. A second guardian phone does NOT grant PARENT
+    // login/access - StudentAccessGuard still matches on guardian_phone.
+    @Column(name = "guardian2_name")
+    private String guardian2Name;
+
+    @Column(name = "guardian2_phone", length = 20)
+    private String guardian2Phone;
+
+    @Column(name = "guardian2_relation", length = 50)
+    private String guardian2Relation;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        this.createdAt = Instant.now();
+    }
+
+    public Student(UUID tenantId, UUID batchId, String fullName, String grade, String guardianPhone) {
+        this.tenantId = tenantId;
+        this.batchId = batchId;
+        this.fullName = fullName;
+        this.grade = grade;
+        this.guardianPhone = guardianPhone;
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\student\dto\StudentDtos.java =====
+package com.teacheros.modules.student.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+
+import java.util.UUID;
+
+public class StudentDtos {
+
+    public record CreateStudentRequest(
+            @NotBlank String fullName,
+            String grade,
+            @NotBlank @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Enter a valid guardian phone number") String guardianPhone,
+
+            // Optional - only set this if the student has their own phone
+            // and should be able to log in and view their own data directly.
+            @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Enter a valid phone number") String phoneNumber,
+
+            // Optional - lets low-attendance/fee alerts also go out by email.
+            @jakarta.validation.constraints.Email(message = "Enter a valid email address") String guardianEmail,
+
+            UUID batchId) {
+    }
+
+    public record UpdateStudentRequest(
+            @NotBlank String fullName,
+            String grade,
+            @NotBlank @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Enter a valid guardian phone number") String guardianPhone,
+            @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Enter a valid phone number") String phoneNumber,
+            @jakarta.validation.constraints.Email(message = "Enter a valid email address") String guardianEmail,
+            UUID batchId) {
+    }
+
+    public record StudentResponse(
+            UUID id,
+            String fullName,
+            String grade,
+            String guardianPhone,
+            String phoneNumber,
+            String guardianEmail,
+            UUID batchId) {
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\student\StudentService.java =====
+package com.teacheros.modules.student;
+
+import com.teacheros.common.exception.ApiException;
+import com.teacheros.common.exception.ResourceNotFoundException;
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.audit.AuditActions;
+import com.teacheros.modules.audit.AuditService;
+import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.student.dto.StudentDtos.CreateStudentRequest;
+import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
+import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
+import com.teacheros.modules.user.User;
+import com.teacheros.modules.user.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class StudentService {
+
+    private static final int MAX_LOOKUP_IDS = 200;
+
+    private final StudentRepository studentRepository;
+    private final UserRepository userRepository;
+    private final BatchRepository batchRepository;
+    private final CurrentTenantProvider currentTenantProvider;
+    private final StudentAccessGuard studentAccessGuard;
+    private final AuditService auditService;
+
+    public StudentService(
+            StudentRepository studentRepository,
+            UserRepository userRepository,
+            BatchRepository batchRepository,
+            CurrentTenantProvider currentTenantProvider,
+            StudentAccessGuard studentAccessGuard,
+            AuditService auditService) {
+        this.studentRepository = studentRepository;
+        this.userRepository = userRepository;
+        this.batchRepository = batchRepository;
+        this.currentTenantProvider = currentTenantProvider;
+        this.studentAccessGuard = studentAccessGuard;
+        this.auditService = auditService;
+    }
+
+    @Transactional
+    public StudentResponse create(CreateStudentRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        assertBatchBelongsToTenant(tenantId, request.batchId());
+        assertPhoneAvailable(tenantId, request.phoneNumber(), null);
+
+        Student student = new Student(tenantId, request.batchId(), request.fullName(),
+                request.grade(), request.guardianPhone());
+        student.setPhoneNumber(request.phoneNumber());
+        student.setGuardianEmail(request.guardianEmail());
+        student = studentRepository.save(student);
+        return toResponse(student);
+    }
+
+    /**
+     * Staff-only (see controller's @PreAuthorize) - a student/parent editing
+     * their own contact details isn't supported yet, this is the teacher
+     * correcting/completing a record, e.g. adding the student's own phone
+     * after the fact so they can log in themselves.
+     */
+    @Transactional
+    public StudentResponse update(UUID studentId, UpdateStudentRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+        assertBatchBelongsToTenant(tenantId, request.batchId());
+        assertPhoneAvailable(tenantId, request.phoneNumber(), studentId);
+
+        student.setFullName(request.fullName());
+        student.setGrade(request.grade());
+        student.setGuardianPhone(request.guardianPhone());
+        student.setPhoneNumber(request.phoneNumber());
+        student.setGuardianEmail(request.guardianEmail());
+        student.setBatchId(request.batchId());
+        student = studentRepository.save(student);
+        return toResponse(student);
+    }
+
+    /**
+     * Soft delete - attendance, marks, fees and messages keep referencing
+     * this student, so the row stays. Inactive students disappear from
+     * lists, rosters, reports, alerts, and from parent/student account
+     * linking. Idempotent (and only audited when something actually changed).
+     */
+    @Transactional
+    public void deactivate(UUID studentId) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+        if (student.isActive()) {
+            student.setActive(false);
+            studentRepository.save(student);
+            // Name only - phone numbers are deliberately not written to the audit log.
+            auditService.record(AuditActions.STUDENT_DEACTIVATED, AuditActions.STUDENT, studentId,
+                    AuditService.meta("fullName", student.getFullName(), "batchId", student.getBatchId()));
+        }
+    }
+
+    /**
+     * search (optional) matches a name or guardian-phone fragment,
+     * case-insensitively, ordered by name. Blank/null keeps the original
+     * unsearched behaviour.
+     */
+    public Page<StudentResponse> list(UUID batchId, String search, Pageable pageable) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+
+        if (search != null && !search.isBlank()) {
+            String pattern = "%" + escapeLike(search.trim().toLowerCase()) + "%";
+            return studentRepository.search(tenantId, batchId, pattern, pageable).map(this::toResponse);
+        }
+
+        Page<Student> page = (batchId != null)
+                ? studentRepository.findByTenantIdAndBatchIdAndActiveTrue(tenantId, batchId, pageable)
+                : studentRepository.findByTenantIdAndActiveTrue(tenantId, pageable);
+        return page.map(this::toResponse);
+    }
+
+    /**
+     * Staff-only: resolve a set of student IDs to records (e.g. names for a page of
+     * fees).
+     */
+    public List<StudentResponse> lookup(List<UUID> ids) {
+        if (ids.size() > MAX_LOOKUP_IDS) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "TOO_MANY_IDS",
+                    "Look up at most " + MAX_LOOKUP_IDS + " students at a time.");
+        }
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        return studentRepository.findByTenantIdAndIdIn(tenantId, ids.stream().distinct().toList())
+                .stream().map(this::toResponse).toList();
+    }
+
+    /**
+     * Any authenticated role can call this (see StudentController - no
+     * PreAuthorize restricting it), but PARENT/STUDENT callers only ever
+     * get their own linked student back - studentAccessGuard enforces that
+     * before we touch anything else. Staff roles are unaffected.
+     */
+    public StudentResponse get(UUID studentId) {
+        studentAccessGuard.assertCanView(studentId);
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", studentId));
+        return toResponse(student);
+    }
+
+    /**
+     * PARENT self-service: every active student in this tenant whose
+     * guardian_phone matches the calling user's own phone - siblings
+     * included, no separate linking step the teacher has to perform.
+     */
+    public List<StudentResponse> listMyChildren() {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        String phoneNumber = currentUserPhoneNumber();
+        return studentRepository.findByTenantIdAndGuardianPhoneAndActiveTrue(tenantId, phoneNumber)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    /**
+     * STUDENT self-service: the one student record whose own phone_number
+     * matches the calling user's login phone.
+     */
+    public StudentResponse getMyStudentRecord() {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        String phoneNumber = currentUserPhoneNumber();
+        Student student = studentRepository.findFirstByTenantIdAndPhoneNumberAndActiveTrue(tenantId, phoneNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Student", "self"));
+        return toResponse(student);
+    }
+
+    // A client-supplied batchId must belong to the caller's own tenant -
+    // without this a student could be enrolled in another tenant's batch.
+    private void assertBatchBelongsToTenant(UUID tenantId, UUID batchId) {
+        if (batchId == null) {
+            return;
+        }
+        batchRepository.findByIdAndTenantId(batchId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Batch", batchId));
+    }
+
+    // uq_students_tenant_phone would otherwise surface as a raw 500.
+    private void assertPhoneAvailable(UUID tenantId, String phoneNumber, UUID selfId) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            return;
+        }
+        studentRepository.findFirstByTenantIdAndPhoneNumber(tenantId, phoneNumber)
+                .filter(other -> !other.getId().equals(selfId))
+                .ifPresent(other -> {
+                    throw new ApiException(HttpStatus.CONFLICT, "STUDENT_PHONE_IN_USE",
+                            "Another student (possibly a deactivated one) already uses that phone number.");
+                });
+    }
+
+    private String currentUserPhoneNumber() {
+        User user = userRepository.findById(currentTenantProvider.getCurrentUserId())
+                .orElseThrow(
+                        () -> new IllegalStateException("Authenticated user not found - this should never happen"));
+        return user.getPhoneNumber();
+    }
+
+    // '!' is the ESCAPE character in StudentRepository#search.
+    private String escapeLike(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
+    private StudentResponse toResponse(Student student) {
+        return new StudentResponse(student.getId(), student.getFullName(), student.getGrade(),
+                student.getGuardianPhone(), student.getPhoneNumber(), student.getGuardianEmail(),
+                student.getBatchId());
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\student\StudentRepository.java =====
+package com.teacheros.modules.student;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface StudentRepository extends JpaRepository<Student, UUID> {
+
+    Optional<Student> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    Page<Student> findByTenantIdAndActiveTrue(UUID tenantId, Pageable pageable);
+
+    /**
+     * Name / guardian-phone search for the student picker. pattern is a
+     * ready-made lowercase LIKE pattern (see StudentService#list) using
+     * '!' as the escape character. Ordering is fixed here, so callers
+     * must not also pass a sort.
+     */
+    @Query("""
+            SELECT s FROM Student s
+            WHERE s.tenantId = :tenantId AND s.active = true
+            AND (:batchId IS NULL OR s.batchId = :batchId)
+            AND (LOWER(s.fullName) LIKE :pattern ESCAPE '!' OR s.guardianPhone LIKE :pattern ESCAPE '!')
+            ORDER BY s.fullName
+            """)
+    Page<Student> search(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
+            @Param("pattern") String pattern, Pageable pageable);
+
+    /**
+     * Resolve names for a set of IDs (e.g. the students behind a page of
+     * fees). Includes inactive students - a fee outlives a deactivation.
+     */
+    List<Student> findByTenantIdAndIdIn(UUID tenantId, Collection<UUID> ids);
+
+    /**
+     * Unpaged variant used by NotificationService#generateLowAttendanceAlerts -
+     * it has to walk every active student in the tenant to compute each
+     * one's attendance percentage, so pagination doesn't apply there.
+     */
+    List<Student> findAllByTenantIdAndActiveTrue(UUID tenantId);
+
+    Page<Student> findByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId, Pageable pageable);
+
+    List<Student> findByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId);
+
+    /**
+     * Used by BatchService to refuse deactivating a batch that still has students.
+     */
+    long countByTenantIdAndBatchIdAndActiveTrue(UUID tenantId, UUID batchId);
+
+    /**
+     * All active students in a tenant whose guardian_phone matches - i.e.
+     * this guardian's children, including siblings. This is how a parent
+     * account's linked children are derived: no separate parent-student
+     * link table, just a query against the phone already collected when
+     * the student was added.
+     */
+    List<Student> findByTenantIdAndGuardianPhoneAndActiveTrue(UUID tenantId, String guardianPhone);
+
+    /**
+     * The student whose own phone_number matches, scoped to a tenant - used
+     * once we already know which tenant the logged-in user belongs to.
+     */
+    Optional<Student> findFirstByTenantIdAndPhoneNumberAndActiveTrue(UUID tenantId, String phoneNumber);
+
+    /**
+     * Active OR inactive - the unique index uq_students_tenant_phone covers
+     * both, so duplicate-phone checks on create/update must too.
+     */
+    Optional<Student> findFirstByTenantIdAndPhoneNumber(UUID tenantId, String phoneNumber);
+
+    /**
+     * Every student phone_number in the tenant, active or not - the unique
+     * index uq_students_tenant_phone applies to all rows, so StudentImportService
+     * must check against inactive students' numbers too.
+     */
+    @Query("SELECT s.phoneNumber FROM Student s WHERE s.tenantId = :tenantId AND s.phoneNumber IS NOT NULL")
+    List<String> findAllPhoneNumbersByTenantId(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Used ONLY during first-login account provisioning, before we know
+     * which tenant a phone number belongs to. Deliberately NOT tenant
+     * scoped - see AuthService.provisionAccountForPhone for the documented
+     * limitation this implies (a guardian phone matching students in more
+     * than one tenant will resolve to the first match found).
+     */
+    Optional<Student> findFirstByGuardianPhoneAndActiveTrue(String guardianPhone);
+
+    Optional<Student> findFirstByPhoneNumberAndActiveTrue(String phoneNumber);
+}
+
+===== backend\src\main\java\com\teacheros\modules\student\StudentController.java =====
+package com.teacheros.modules.student;
+
+import com.teacheros.modules.student.dto.StudentDtos.CreateStudentRequest;
+import com.teacheros.modules.student.dto.StudentDtos.StudentResponse;
+import com.teacheros.modules.student.dto.StudentDtos.UpdateStudentRequest;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/students")
+public class StudentController {
+
+    private final StudentService studentService;
+
+    public StudentController(StudentService studentService) {
+        this.studentService = studentService;
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<StudentResponse> create(@Valid @RequestBody CreateStudentRequest request) {
+        return ResponseEntity.ok(studentService.create(request));
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<StudentResponse> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateStudentRequest request) {
+        return ResponseEntity.ok(studentService.update(id, request));
+    }
+
+    // Soft delete - history is kept, see StudentService#deactivate.
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
+        studentService.deactivate(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Default sort (name, then id as a tiebreaker) keeps page boundaries
+    // stable between requests. When a search term is given, the query in
+    // StudentRepository#search fixes its own ordering, so any sort on the
+    // Pageable is dropped (page number and size are kept).
+    @GetMapping
+    @PreAuthorize("@perm.has('STUDENTS_VIEW')")
+    public ResponseEntity<Page<StudentResponse>> list(
+            @RequestParam(required = false) UUID batchId,
+            @RequestParam(required = false) String search,
+            @PageableDefault(size = 20, sort = { "fullName", "id" }) Pageable pageable) {
+        Pageable effective = (search != null && !search.isBlank())
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
+                : pageable;
+        return ResponseEntity.ok(studentService.list(batchId, search, effective));
+    }
+
+    // Resolves a set of IDs to student records (names for a page of fees,
+    // etc.). Literal path, so it never collides with /{id}.
+    @GetMapping("/lookup")
+    @PreAuthorize("hasAnyRole('OWNER','TEACHER','STAFF','ADMIN')")
+    public ResponseEntity<List<StudentResponse>> lookup(@RequestParam List<UUID> ids) {
+        return ResponseEntity.ok(studentService.lookup(ids));
+    }
+
+    // No @PreAuthorize restricting this one to staff roles - PARENT and
+    // STUDENT need to reach it too (for their own linked student, via the
+    // web/mobile student detail screens). StudentService.get() enforces the
+    // fine-grained "your own child / yourself only" check via
+    // StudentAccessGuard - see that class for why the check lives there
+    // and not here.
+    @GetMapping("/{id}")
+    public ResponseEntity<StudentResponse> get(@PathVariable UUID id) {
+        return ResponseEntity.ok(studentService.get(id));
+    }
+
+    @GetMapping("/me/children")
+    @PreAuthorize("hasRole('PARENT')")
+    public ResponseEntity<List<StudentResponse>> myChildren() {
+        return ResponseEntity.ok(studentService.listMyChildren());
+    }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<StudentResponse> myStudentRecord() {
+        return ResponseEntity.ok(studentService.getMyStudentRecord());
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\reportcard\ExamTerm.java =====
+package com.teacheros.modules.reportcard;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+@Entity
+@Table(name = "exam_terms")
+@Getter
+@Setter
+@NoArgsConstructor
+public class ExamTerm {
+
+    @Id
+    @GeneratedValue
+    private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    // No FK yet - see V80 migration comment.
+    @Column(name = "academic_year_id")
+    private UUID academicYearId;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(name = "start_date", nullable = false)
+    private LocalDate startDate;
+
+    @Column(name = "end_date", nullable = false)
+    private LocalDate endDate;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        this.createdAt = Instant.now();
+    }
+
+    public ExamTerm(UUID tenantId, UUID academicYearId, String name, LocalDate startDate, LocalDate endDate) {
+        this.tenantId = tenantId;
+        this.academicYearId = academicYearId;
+        this.name = name;
+        this.startDate = startDate;
+        this.endDate = endDate;
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\feestructure\FeeStructure.java =====
+package com.teacheros.modules.feestructure;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "fee_structures")
+@Getter
+@Setter
+@NoArgsConstructor
+public class FeeStructure {
+
+    @Id
+    @GeneratedValue
+    private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(nullable = false, length = 150)
+    private String name;
+
+    @Column(name = "academic_year", nullable = false, length = 9)
+    private String academicYear;
+
+    private String grade;
+
+    @Column(name = "batch_id")
+    private UUID batchId;
+
+    @Column(name = "plan_id", nullable = false)
+    private UUID planId;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        this.createdAt = Instant.now();
+    }
+
+    public FeeStructure(UUID tenantId, String name, String academicYear, String grade, UUID batchId, UUID planId) {
+        this.tenantId = tenantId;
+        this.name = name;
+        this.academicYear = academicYear;
+        this.grade = grade;
+        this.batchId = batchId;
+        this.planId = planId;
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\audit\AuditService.java =====
+package com.teacheros.modules.audit;
+
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+/**
+ * Writes who-did-what to audit_log. Tenant and actor always come from the
+ * JWT via CurrentTenantProvider. The row is written in the CALLER'S
+ * transaction, so an audit row exists exactly when the action committed.
+ *
+ * Metadata is sanitised before storage: keys that look like secrets (otp,
+ * code, token, password, secret, signature) are dropped, and any phone
+ * number - by key name or by value shape - is masked to its last 4 digits.
+ */
+@Service
+public class AuditService {
+
+    private static final Pattern PHONE_VALUE = Pattern.compile("^\\+?[0-9]{10,15}$");
+    private static final Set<String> BLOCKED_KEY_FRAGMENTS = Set.of("otp", "code", "token", "password", "secret",
+            "signature");
+
+    private final AuditLogRepository auditLogRepository;
+    private final CurrentTenantProvider currentTenantProvider;
+
+    public AuditService(AuditLogRepository auditLogRepository, CurrentTenantProvider currentTenantProvider) {
+        this.auditLogRepository = auditLogRepository;
+        this.currentTenantProvider = currentTenantProvider;
+    }
+
+    @Transactional
+    public void record(String action, String resourceType, UUID resourceId, Map<String, Object> metadata) {
+        auditLogRepository.save(new AuditLog(
+                currentTenantProvider.getCurrentTenantId(),
+                currentTenantProvider.getCurrentUserId(),
+                action, resourceType, resourceId, sanitize(metadata)));
+    }
+
+    /**
+     * Builds a metadata map from key/value pairs; unlike Map.of, null values are
+     * allowed.
+     */
+    public static Map<String, Object> meta(Object... keyValues) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            map.put(String.valueOf(keyValues[i]), keyValues[i + 1]);
+        }
+        return map;
+    }
+
+    /** Keeps only the last 4 characters, e.g. +919876543210 -> *********3210. */
+    public static String maskPhone(String phone) {
+        if (phone == null || phone.length() <= 4) {
+            return "****";
+        }
+        return "*".repeat(phone.length() - 4) + phone.substring(phone.length() - 4);
+    }
+
+    static Map<String, Object> sanitize(Map<String, Object> metadata) {
+        Map<String, Object> clean = new LinkedHashMap<>();
+        if (metadata == null) {
+            return clean;
+        }
+        for (Map.Entry<String, Object> e : metadata.entrySet()) {
+            String key = e.getKey();
+            if (key == null) {
+                continue;
+            }
+            String lower = key.toLowerCase();
+            if (BLOCKED_KEY_FRAGMENTS.stream().anyMatch(lower::contains)) {
+                continue;
+            }
+            Object value = e.getValue();
+            if (value instanceof String s) {
+                clean.put(key, (lower.contains("phone") || PHONE_VALUE.matcher(s).matches()) ? maskPhone(s) : s);
+            } else if (value == null || value instanceof Number || value instanceof Boolean) {
+                clean.put(key, value);
+            } else {
+                clean.put(key, String.valueOf(value)); // UUIDs, dates, enums -> plain strings
+            }
+        }
+        return clean;
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\permission\PermissionService.java =====
+package com.teacheros.modules.permission;
+
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.user.Role;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+/**
+ * Registered as the bean "perm" so controllers can write
+ * {@code @PreAuthorize("@perm.has('FEES_EDIT')")} instead of a long role list.
+ *
+ * Tenant and role always come from the authenticated principal
+ * (CurrentTenantProvider), never from the request.
+ *
+ * Fails closed: no row for (tenant, role, permission) means denied. OWNER is
+ * always allowed so an edited permission matrix can never lock the owner out.
+ *
+ * A misspelled permission name throws IllegalArgumentException (a 500, not a
+ * silent allow). PreAuthorizePermissionNamesTest catches typos at build time.
+ */
+@Service("perm")
+public class PermissionService {
+
+    private final RolePermissionRepository rolePermissionRepository;
+    private final CurrentTenantProvider currentTenantProvider;
+
+    public PermissionService(RolePermissionRepository rolePermissionRepository,
+            CurrentTenantProvider currentTenantProvider) {
+        this.rolePermissionRepository = rolePermissionRepository;
+        this.currentTenantProvider = currentTenantProvider;
+    }
+
+    // Single String-arg method (no enum overload) so SpEL resolution is
+    // unambiguous.
+    public boolean has(String permissionName) {
+        Permission permission = Permission.valueOf(permissionName);
+        String role = currentTenantProvider.getCurrentRole();
+
+        if (Role.OWNER.name().equals(role)) {
+            return true;
+        }
+        return rolePermissionRepository.existsByTenantIdAndRoleAndPermission(
+                currentTenantProvider.getCurrentTenantId(), role, permission.name());
+    }
+
+    /**
+     * Called only from tenant provisioning with the ID of the tenant that was
+     * just created in the same transaction - not a request-supplied tenant ID.
+     */
+    @Transactional
+    public void seedDefaults(UUID tenantId) {
+        rolePermissionRepository.seedDefaults(tenantId);
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\feestructure\FeeStructureController.java =====
+package com.teacheros.modules.feestructure;
+
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.AssignStructureRequest;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.AssignmentPreviewResponse;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.AssignmentResultResponse;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.CreateFeeStructureRequest;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.FeeStructureResponse;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.UpdateFeeStructureRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/fee-structures")
+public class FeeStructureController {
+
+    private final FeeStructureService structureService;
+    private final FeeAssignmentService assignmentService;
+
+    public FeeStructureController(FeeStructureService structureService, FeeAssignmentService assignmentService) {
+        this.structureService = structureService;
+        this.assignmentService = assignmentService;
+    }
+
+    @GetMapping
+    @PreAuthorize(FeePermissions.VIEW)
+    public ResponseEntity<List<FeeStructureResponse>> list() {
+        return ResponseEntity.ok(structureService.list());
+    }
+
+    @PostMapping
+    @PreAuthorize(FeePermissions.EDIT)
+    public ResponseEntity<FeeStructureResponse> create(@Valid @RequestBody CreateFeeStructureRequest request) {
+        return ResponseEntity.ok(structureService.create(request));
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize(FeePermissions.EDIT)
+    public ResponseEntity<FeeStructureResponse> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateFeeStructureRequest request) {
+        return ResponseEntity.ok(structureService.update(id, request));
+    }
+
+    @PostMapping("/preview")
+    @PreAuthorize(FeePermissions.VIEW)
+    public ResponseEntity<AssignmentPreviewResponse> preview(@Valid @RequestBody AssignStructureRequest request) {
+        return ResponseEntity.ok(assignmentService.preview(request));
+    }
+
+    @PostMapping("/assign")
+    @PreAuthorize(FeePermissions.EDIT)
+    public ResponseEntity<AssignmentResultResponse> assign(@Valid @RequestBody AssignStructureRequest request) {
+        return ResponseEntity.ok(assignmentService.assign(request));
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\feestructure\FeeStructureService.java =====
+package com.teacheros.modules.feestructure;
+
+import com.teacheros.common.exception.ApiException;
+import com.teacheros.common.exception.ResourceNotFoundException;
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.CreateFeeStructureRequest;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.FeeStructureResponse;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.StructureItemInput;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.StructureItemResponse;
+import com.teacheros.modules.feestructure.dto.FeeStructureDtos.UpdateFeeStructureRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Service
+public class FeeStructureService {
+
+    private final FeeStructureRepository structureRepository;
+    private final FeeStructureItemRepository itemRepository;
+    private final FeeHeadRepository headRepository;
+    private final InstalmentPlanRepository planRepository;
+    private final BatchRepository batchRepository;
+    private final FeeAuditWriter audit;
+    private final CurrentTenantProvider currentTenantProvider;
+
+    public FeeStructureService(FeeStructureRepository structureRepository, FeeStructureItemRepository itemRepository,
+            FeeHeadRepository headRepository, InstalmentPlanRepository planRepository,
+            BatchRepository batchRepository, FeeAuditWriter audit, CurrentTenantProvider currentTenantProvider) {
+        this.structureRepository = structureRepository;
+        this.itemRepository = itemRepository;
+        this.headRepository = headRepository;
+        this.planRepository = planRepository;
+        this.batchRepository = batchRepository;
+        this.audit = audit;
+        this.currentTenantProvider = currentTenantProvider;
+    }
+
+    public List<FeeStructureResponse> list() {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        List<FeeStructure> structures = structureRepository.findByTenantIdOrderByAcademicYearDescNameAsc(tenantId);
+        if (structures.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<FeeStructureItem>> items = itemRepository
+                .findByTenantIdAndStructureIdIn(tenantId, structures.stream().map(FeeStructure::getId).toList())
+                .stream().collect(Collectors.groupingBy(FeeStructureItem::getStructureId));
+        Map<UUID, FeeHead> heads = headRepository.findByTenantIdOrderBySortOrderAscNameAsc(tenantId).stream()
+                .collect(Collectors.toMap(FeeHead::getId, Function.identity()));
+        Map<UUID, InstalmentPlan> plans = planRepository.findByTenantIdOrderByNameAsc(tenantId).stream()
+                .collect(Collectors.toMap(InstalmentPlan::getId, Function.identity()));
+        return structures.stream()
+                .map(s -> toResponse(s, items.getOrDefault(s.getId(), List.of()), heads, plans.get(s.getPlanId())))
+                .toList();
+    }
+
+    @Transactional
+    public FeeStructureResponse create(CreateFeeStructureRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        String name = request.name().trim();
+
+        InstalmentPlan plan = planRepository.findByIdAndTenantId(request.planId(), tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Instalment plan", request.planId()));
+        if (request.batchId() != null) {
+            batchRepository.findByIdAndTenantId(request.batchId(), tenantId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Batch", request.batchId()));
+        }
+        if (structureRepository.existsByTenantIdAndNameIgnoreCaseAndAcademicYear(tenantId, name, request.academicYear())) {
+            throw new ApiException(HttpStatus.CONFLICT, "STRUCTURE_EXISTS",
+                    "A structure named \"" + name + "\" already exists for " + request.academicYear() + ".");
+        }
+
+        Set<UUID> headIds = new HashSet<>();
+        for (StructureItemInput item : request.items()) {
+            if (!headIds.add(item.headId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "DUPLICATE_HEAD", "Each fee head can appear only once.");
+            }
+        }
+        Map<UUID, FeeHead> heads = headRepository.findByTenantIdAndIdIn(tenantId, headIds).stream()
+                .collect(Collectors.toMap(FeeHead::getId, Function.identity()));
+        for (UUID headId : headIds) {
+            FeeHead head = heads.get(headId);
+            if (head == null) {
+                throw new ResourceNotFoundException("Fee head", headId);
+            }
+            if (!head.isActive()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "HEAD_INACTIVE", "Fee head \"" + head.getName() + "\" is inactive.");
+            }
+        }
+
+        String grade = request.grade() == null || request.grade().isBlank() ? null : request.grade().trim();
+        FeeStructure structure = structureRepository.save(
+                new FeeStructure(tenantId, name, request.academicYear(), grade, request.batchId(), plan.getId()));
+        List<FeeStructureItem> items = itemRepository.saveAll(request.items().stream()
+                .map(i -> new FeeStructureItem(tenantId, structure.getId(), i.headId(), FeeCalculator.scale(i.amount())))
+                .toList());
+
+        audit.record("FEE_STRUCTURE_CREATED", "FEE_STRUCTURE", structure.getId(),
+                Map.of("name", name, "academicYear", request.academicYear(), "items", items.size()));
+        return toResponse(structure, items, heads, plan);
+    }
+
+    @Transactional
+    public FeeStructureResponse update(UUID id, UpdateFeeStructureRequest request) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        FeeStructure structure = structureRepository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Fee structure", id));
+        structure.setName(request.name().trim());
+        structure.setActive(request.active());
+        structureRepository.save(structure);
+
+        Map<UUID, FeeHead> heads = headRepository.findByTenantIdOrderBySortOrderAscNameAsc(tenantId).stream()
+                .collect(Collectors.toMap(FeeHead::getId, Function.identity()));
+        InstalmentPlan plan = planRepository.findByIdAndTenantId(structure.getPlanId(), tenantId).orElse(null);
+        return toResponse(structure, itemRepository.findByTenantIdAndStructureId(tenantId, id), heads, plan);
+    }
+
+    private FeeStructureResponse toResponse(FeeStructure s, List<FeeStructureItem> items, Map<UUID, FeeHead> heads,
+            InstalmentPlan plan) {
+        List<StructureItemResponse> rows = items.stream()
+                .sorted(Comparator.comparingInt(i -> heads.containsKey(i.getHeadId()) ? heads.get(i.getHeadId()).getSortOrder() : 0))
+                .map(i -> new StructureItemResponse(i.getHeadId(),
+                        heads.containsKey(i.getHeadId()) ? heads.get(i.getHeadId()).getName() : "Unknown", i.getAmount()))
+                .toList();
+        BigDecimal total = items.stream().map(FeeStructureItem::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new FeeStructureResponse(s.getId(), s.getName(), s.getAcademicYear(), s.getGrade(), s.getBatchId(),
+                s.getPlanId(), plan == null ? null : plan.getName(), s.isActive(), rows, FeeCalculator.scale(total));
+    }
+}
+
+===== backend\src\main\java\com\teacheros\modules\imports\StudentImportService.java =====
+package com.teacheros.modules.imports;
+
+import com.teacheros.common.exception.ApiException;
+import com.teacheros.common.tenant.CurrentTenantProvider;
+import com.teacheros.modules.batch.Batch;
+import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.imports.TabularFileReader.ParsedFile;
+import com.teacheros.modules.imports.TabularFileReader.RawRow;
+import com.teacheros.modules.imports.dto.ImportDtos.ImportResult;
+import com.teacheros.modules.imports.dto.ImportDtos.RowError;
+import com.teacheros.modules.student.Student;
+import com.teacheros.modules.student.StudentRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+/**
+ * Bulk student import from a .csv/.xlsx file. Same validation rules as
+ * StudentDtos.CreateStudentRequest, plus the checks a single-record create
+ * gets for free from the database but a 500-row file needs reported per row
+ * (duplicate phone numbers, unknown batch names).
+ *
+ * Tenant scoping: the tenant comes only from CurrentTenantProvider and
+ * batchName is resolved only against that tenant's own batches, so a file
+ * can never attach a student to another tenant's batch or create data in
+ * another tenant.
+ */
+@Service
+public class StudentImportService {
+
+    private static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
+    private static final Pattern PHONE = Pattern.compile("^\\+?[0-9]{10,15}$");
+    private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+    private static final String EXPECTED_COLUMNS = "fullName, grade, guardianPhone, phoneNumber, guardianEmail, batchName";
+
+    // Header text is lower-cased with everything but letters/digits removed
+    // before lookup, so "Full Name", "full_name" and "FULLNAME" all match.
+    private static final Map<String, String> HEADER_ALIASES = Map.ofEntries(
+            Map.entry("fullname", "fullName"),
+            Map.entry("name", "fullName"),
+            Map.entry("studentname", "fullName"),
+            Map.entry("grade", "grade"),
+            Map.entry("class", "grade"),
+            Map.entry("guardianphone", "guardianPhone"),
+            Map.entry("guardianmobile", "guardianPhone"),
+            Map.entry("parentphone", "guardianPhone"),
+            Map.entry("parentmobile", "guardianPhone"),
+            Map.entry("phonenumber", "phoneNumber"),
+            Map.entry("studentphone", "phoneNumber"),
+            Map.entry("studentphonenumber", "phoneNumber"),
+            Map.entry("guardianemail", "guardianEmail"),
+            Map.entry("parentemail", "guardianEmail"),
+            Map.entry("batch", "batchName"),
+            Map.entry("batchname", "batchName"));
+
+    private final StudentRepository studentRepository;
+    private final BatchRepository batchRepository;
+    private final CurrentTenantProvider currentTenantProvider;
+    private final int maxRows;
+
+    public StudentImportService(
+            StudentRepository studentRepository,
+            BatchRepository batchRepository,
+            CurrentTenantProvider currentTenantProvider,
+            @Value("${app.imports.max-rows:2000}") int maxRows) {
+        this.studentRepository = studentRepository;
+        this.batchRepository = batchRepository;
+        this.currentTenantProvider = currentTenantProvider;
+        this.maxRows = maxRows;
+    }
+
+    @Transactional
+    public ImportResult importStudents(MultipartFile file, boolean dryRun, boolean skipInvalidRows) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+
+        if (file == null || file.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "FILE_REQUIRED", "Choose a file to import.");
+        }
+        if (file.getSize() > MAX_FILE_BYTES) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "FILE_TOO_LARGE",
+                    "That file is too large. Maximum size is " + (MAX_FILE_BYTES / (1024 * 1024)) + "MB.");
+        }
+
+        ParsedFile parsed = TabularFileReader.read(file, maxRows);
+        Map<String, Integer> cols = mapColumns(parsed.headers());
+        if (parsed.rows().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "IMPORT_NO_ROWS",
+                    "The file has a header but no student rows.");
+        }
+
+        // Everything below is looked up once, up front - not once per row.
+        Map<String, List<Batch>> batchesByName = new HashMap<>();
+        for (Batch b : batchRepository.findAllByTenantIdAndActiveTrue(tenantId)) {
+            batchesByName.computeIfAbsent(normalizeName(b.getName()), k -> new ArrayList<>()).add(b);
+        }
+        // All phone numbers, including inactive students' - the unique index
+        // uq_students_tenant_phone covers every row, not just active ones.
+        Set<String> dbPhones = new HashSet<>(studentRepository.findAllPhoneNumbersByTenantId(tenantId));
+        Set<String> dbStudentKeys = new HashSet<>();
+        for (Student s : studentRepository.findAllByTenantIdAndActiveTrue(tenantId)) {
+            dbStudentKeys.add(studentKey(s.getFullName(), s.getGuardianPhone()));
+        }
+
+        Map<String, Integer> filePhoneLine = new HashMap<>();
+        Map<String, Integer> fileKeyLine = new HashMap<>();
+        List<Student> valid = new ArrayList<>();
+        List<RowError> errors = new ArrayList<>();
+
+        for (RawRow row : parsed.rows()) {
+            List<String> messages = new ArrayList<>();
+
+            String fullName = cell(row, cols, "fullName");
+            String grade = cell(row, cols, "grade");
+            String guardianPhone = normalizePhone(cell(row, cols, "guardianPhone"));
+            String studentPhone = normalizePhone(cell(row, cols, "phoneNumber"));
+            String guardianEmail = cell(row, cols, "guardianEmail");
+            String batchName = cell(row, cols, "batchName");
+
+            if (fullName.isEmpty()) {
+                messages.add("Full name is required.");
+            } else if (fullName.length() > 255) {
+                messages.add("Full name is too long (max 255 characters).");
+            }
+            if (grade.length() > 50) {
+                messages.add("Grade is too long (max 50 characters).");
+            }
+
+            boolean guardianPhoneValid = false;
+            if (guardianPhone.isEmpty()) {
+                messages.add("Guardian phone is required.");
+            } else if (!PHONE.matcher(guardianPhone).matches()) {
+                messages.add("Guardian phone must be 10-15 digits, optionally starting with +.");
+            } else {
+                guardianPhoneValid = true;
+            }
+
+            if (!studentPhone.isEmpty()) {
+                if (!PHONE.matcher(studentPhone).matches()) {
+                    messages.add("Student phone must be 10-15 digits, optionally starting with +.");
+                } else if (dbPhones.contains(studentPhone)) {
+                    messages.add("Student phone " + studentPhone + " is already used by another student.");
+                } else if (filePhoneLine.containsKey(studentPhone)) {
+                    messages.add("Student phone " + studentPhone + " is already used on line "
+                            + filePhoneLine.get(studentPhone) + ".");
+                }
+            }
+
+            if (!guardianEmail.isEmpty() && (guardianEmail.length() > 255 || !EMAIL.matcher(guardianEmail).matches())) {
+                messages.add("Guardian email is not a valid email address.");
+            }
+
+            UUID batchId = null;
+            if (!batchName.isEmpty()) {
+                List<Batch> matches = batchesByName.getOrDefault(normalizeName(batchName), List.of());
+                if (matches.isEmpty()) {
+                    messages.add(
+                            "Batch \"" + batchName + "\" was not found. Check the spelling or create the batch first.");
+                } else if (matches.size() > 1) {
+                    messages.add("More than one batch is named \"" + batchName + "\". Rename one so names are unique.");
+                } else {
+                    batchId = matches.get(0).getId();
+                }
+            }
+
+            String key = null;
+            if (!fullName.isEmpty() && guardianPhoneValid) {
+                key = studentKey(fullName, guardianPhone);
+                if (dbStudentKeys.contains(key)) {
+                    messages.add("A student named \"" + fullName + "\" with this guardian phone already exists.");
+                } else if (fileKeyLine.containsKey(key)) {
+                    messages.add("Duplicate of line " + fileKeyLine.get(key) + " (same name and guardian phone).");
+                }
+            }
+
+            if (messages.isEmpty()) {
+                Student student = new Student(tenantId, batchId, fullName, grade.isEmpty() ? null : grade,
+                        guardianPhone);
+                student.setPhoneNumber(studentPhone.isEmpty() ? null : studentPhone);
+                student.setGuardianEmail(guardianEmail.isEmpty() ? null : guardianEmail);
+                valid.add(student);
+                // Only valid rows are remembered, so one bad row doesn't make
+                // every later row that resembles it look like a duplicate.
+                if (!studentPhone.isEmpty()) {
+                    filePhoneLine.put(studentPhone, row.lineNumber());
+                }
+                fileKeyLine.put(key, row.lineNumber());
+            } else {
+                errors.add(new RowError(row.lineNumber(), messages));
+            }
+        }
+
+        int imported = 0;
+        boolean blockedByErrors = !errors.isEmpty() && !skipInvalidRows;
+        if (!dryRun && !blockedByErrors && !valid.isEmpty()) {
+            try {
+                // Flushed here so a unique-index clash with a concurrent
+                // request surfaces inside this try, not at commit.
+                studentRepository.saveAllAndFlush(valid);
+            } catch (DataIntegrityViolationException e) {
+                throw new ApiException(HttpStatus.CONFLICT, "IMPORT_CONFLICT",
+                        "Someone else changed the student list while this file was importing. Nothing was imported - please try again.");
+            }
+            imported = valid.size();
+        }
+
+        return new ImportResult(dryRun, parsed.rows().size(), valid.size(), imported, errors.size(), errors);
+    }
+
+    private Map<String, Integer> mapColumns(List<String> headers) {
+        Map<String, Integer> cols = new HashMap<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String canonical = HEADER_ALIASES.get(headers.get(i).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", ""));
+            if (canonical != null) {
+                cols.putIfAbsent(canonical, i);
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        for (String required : List.of("fullName", "guardianPhone")) {
+            if (!cols.containsKey(required)) {
+                missing.add(required);
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MISSING_COLUMNS",
+                    "The file is missing required column(s): " + String.join(", ", missing)
+                            + ". Expected columns: " + EXPECTED_COLUMNS + ".");
+        }
+        return cols;
+    }
+
+    private static String cell(RawRow row, Map<String, Integer> cols, String key) {
+        Integer idx = cols.get(key);
+        if (idx == null || idx >= row.cells().size()) {
+            return "";
+        }
+        String value = row.cells().get(idx);
+        return value == null ? "" : value.trim();
+    }
+
+    private static String normalizePhone(String raw) {
+        return raw.replaceAll("[\\s\\-().]", "");
+    }
+
+    private static String normalizeName(String name) {
+        return name.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private static String studentKey(String fullName, String guardianPhone) {
+        return normalizeName(fullName) + "|" + guardianPhone;
+    }
+}
+
+===== backend\src\test\java\com\teacheros\modules\feestructure\FeeStructureTenantIsolationTest.java =====
+package com.teacheros.modules.feestructure;
+
+import com.teacheros.modules.student.Student;
+import com.teacheros.modules.student.StudentRepository;
+import com.teacheros.modules.tenant.Tenant;
+import com.teacheros.modules.tenant.TenantRepository;
+import com.teacheros.modules.user.Role;
+import com.teacheros.modules.user.User;
+import com.teacheros.modules.user.UserRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Runs V1..V111 against a real Postgres (so it also proves the entities match
+ * the migrations under ddl-auto=validate), then checks every new
+ * tenant-owned table: tenant A's rows are invisible to tenant B's finders.
+ */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Testcontainers
+class FeeStructureTenantIsolationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @DynamicPropertySource
+    static void datasource(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
+
+    @Autowired TenantRepository tenants;
+    @Autowired UserRepository users;
+    @Autowired StudentRepository students;
+    @Autowired FeeHeadRepository heads;
+    @Autowired InstalmentPlanRepository plans;
+    @Autowired FeeStructureRepository structures;
+    @Autowired FeeDiscountRepository discounts;
+    @Autowired FeeRulesRepository rules;
+
+    @Test
+    void tenantBCannotSeeTenantAsFeeSetupOrDiscounts() {
+        UUID a = tenants.save(new Tenant("Tenant A")).getId();
+        UUID b = tenants.save(new Tenant("Tenant B")).getId();
+
+        FeeHead head = heads.save(new FeeHead(a, "Tuition", null, true, 0));
+        InstalmentPlan plan = plans.save(new InstalmentPlan(a, "Annual", 1));
+        FeeStructure structure = structures.save(new FeeStructure(a, "Class 8", "2026-27", "8", null, plan.getId()));
+        UUID owner = users.save(new User(a, "+919111111111", "Owner A", Role.OWNER)).getId();
+        UUID student = students.save(new Student(a, null, "Asha", "8", "+919222222222")).getId();
+        FeeDiscount discount = discounts.save(new FeeDiscount(a, student, null, AmountType.PERCENT,
+                new BigDecimal("10.00"), "Merit", owner));
+        rules.save(new FeeRules(a));
+
+        // Tenant A sees its own rows...
+        assertThat(heads.findByIdAndTenantId(head.getId(), a)).isPresent();
+        assertThat(plans.findByIdAndTenantId(plan.getId(), a)).isPresent();
+        assertThat(structures.findByIdAndTenantId(structure.getId(), a)).isPresent();
+        assertThat(discounts.findByIdAndTenantId(discount.getId(), a)).isPresent();
+        assertThat(rules.findById(a)).isPresent();
+
+        // ...tenant B sees none of them.
+        assertThat(heads.findByIdAndTenantId(head.getId(), b)).isEmpty();
+        assertThat(heads.findByTenantIdOrderBySortOrderAscNameAsc(b)).isEmpty();
+        assertThat(plans.findByIdAndTenantId(plan.getId(), b)).isEmpty();
+        assertThat(structures.findByIdAndTenantId(structure.getId(), b)).isEmpty();
+        assertThat(structures.findByTenantIdOrderByAcademicYearDescNameAsc(b)).isEmpty();
+        assertThat(discounts.findByIdAndTenantId(discount.getId(), b)).isEmpty();
+        assertThat(discounts.findByTenantIdOrderByCreatedAtDesc(b)).isEmpty();
+        assertThat(rules.findById(b)).isEmpty();
+        assertThat(heads.findByTenantIdAndIdIn(b, java.util.List.of(head.getId()))).isEmpty();
+    }
+
+    @Test
+    void sameHeadNameIsAllowedInTwoTenants() {
+        UUID a = tenants.save(new Tenant("T1")).getId();
+        UUID b = tenants.save(new Tenant("T2")).getId();
+        heads.saveAndFlush(new FeeHead(a, "Tuition", null, true, 0));
+        heads.saveAndFlush(new FeeHead(b, "Tuition", null, true, 0));
+        assertThat(heads.existsByTenantIdAndNameIgnoreCase(a, "tuition")).isTrue();
+        assertThat(heads.findByTenantIdOrderBySortOrderAscNameAsc(b)).hasSize(1);
+    }
+}

@@ -37,6 +37,8 @@ import { FeeSetup } from '@/pages/finance/FeeSetup'
 import { AssignFees } from '@/pages/finance/AssignFees'
 import { FeeDiscounts } from '@/pages/finance/FeeDiscounts'
 import { FinanceReports } from '@/pages/finance/FinanceReports'
+import { LeaveRoute } from '@/pages/LeaveRoute'
+import { StudentRecords } from '@/pages/student/Records'
 
 export default function App() {
   return (
@@ -79,6 +81,8 @@ export default function App() {
             <Route path="/app/fee-assign" element={<ProtectedRoute><AssignFees /></ProtectedRoute>} />
             <Route path="/app/fee-discounts" element={<ProtectedRoute><FeeDiscounts /></ProtectedRoute>} />
             <Route path="/app/finance-reports" element={<ProtectedRoute><FinanceReports /></ProtectedRoute>} />
+            <Route path="/app/leave" element={<ProtectedRoute><LeaveRoute /></ProtectedRoute>} />
+            <Route path="/app/records" element={<ProtectedRoute><StudentRecords /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         </TenantBrandProvider>

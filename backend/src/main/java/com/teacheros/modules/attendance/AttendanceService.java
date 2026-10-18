@@ -8,6 +8,7 @@ import com.teacheros.modules.attendance.dto.AttendanceDtos.MarkAttendanceRequest
 import com.teacheros.modules.attendance.dto.AttendanceDtos.StudentAttendanceEntry;
 import com.teacheros.modules.attendance.dto.AttendanceDtos.StudentAttendanceRecord;
 import com.teacheros.modules.batch.BatchRepository;
+import com.teacheros.modules.leave.LeaveRequestRepository;
 import com.teacheros.modules.student.StudentAccessGuard;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -15,7 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Attendance marking and the derived percentage calculation.
@@ -40,6 +43,7 @@ public class AttendanceService {
     private final com.teacheros.modules.student.StudentRepository studentRepository;
     private final com.teacheros.modules.user.UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final LeaveRequestRepository leaveRequestRepository;
 
     public AttendanceService(
             AttendanceRepository attendanceRepository,
@@ -50,7 +54,8 @@ public class AttendanceService {
             AttendanceQrTokenService qrTokenService,
             com.teacheros.modules.student.StudentRepository studentRepository,
             com.teacheros.modules.user.UserRepository userRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            LeaveRequestRepository leaveRequestRepository) {
         this.attendanceRepository = attendanceRepository;
         this.classSessionRepository = classSessionRepository;
         this.batchRepository = batchRepository;
@@ -60,6 +65,7 @@ public class AttendanceService {
         this.studentRepository = studentRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.leaveRequestRepository = leaveRequestRepository;
     }
 
     /**
@@ -84,7 +90,18 @@ public class AttendanceService {
                 .orElseGet(() -> classSessionRepository.save(
                         new ClassSession(tenantId, request.batchId(), request.sessionDate())));
 
+        // A student on APPROVED leave that covers this date is EXCUSED, not
+        // ABSENT - covers sessions created after the leave was approved
+        // (LeaveRequestService only excuses sessions that already exist).
+        // Only ABSENT is converted: PRESENT/LATE entered by the teacher stay.
+        Set<UUID> onApprovedLeave = Set.copyOf(leaveRequestRepository.findApprovedStudentIdsCovering(
+                tenantId, request.sessionDate(),
+                request.entries().stream().map(StudentAttendanceEntry::studentId).collect(Collectors.toSet())));
+
         List<StudentAttendanceRecord> records = request.entries().stream()
+                .map(entry -> entry.status() == AttendanceStatus.ABSENT && onApprovedLeave.contains(entry.studentId())
+                        ? new StudentAttendanceEntry(entry.studentId(), AttendanceStatus.EXCUSED)
+                        : entry)
                 .map(entry -> upsertAttendance(tenantId, session.getId(), entry, userId))
                 .map(a -> new StudentAttendanceRecord(a.getStudentId(), a.getStatus()))
                 .toList();

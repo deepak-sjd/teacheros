@@ -27,7 +27,8 @@ import java.util.function.Supplier;
  * content generator).
  *
  * Flow: reserve a PENDING ai_usage row (enforcing the tenant's daily limit for
- * that feature) -> make the call -> mark the row SUCCESS or FAILED.
+ * that feature) -> make the call -> mark the row SUCCESS or FAILED, with the
+ * provider's token counts if the client reported them (see AiTokenReporter).
  *
  * Reservation and completion each run in their OWN transaction (REQUIRES_NEW),
  * so:
@@ -79,6 +80,13 @@ public class AiUsageService {
     }
 
     /**
+     * The per-tenant daily cap for a feature - shown on the owner's AI usage page.
+     */
+    public int dailyLimit(AiFeature feature) {
+        return dailyLimits.get(feature);
+    }
+
+    /**
      * Reserves one call for the current tenant, or throws 429. The caller MUST
      * finish the returned Ticket (success/failure) - or use {@link #track}.
      */
@@ -112,23 +120,29 @@ public class AiUsageService {
      * unchanged.
      */
     public <T> T track(AiFeature feature, Supplier<T> call) {
+        AiTokenReporter.clear(); // never inherit a previous call's counts on a pooled thread
         Ticket ticket = checkAndRecord(feature);
         try {
             T result = call.get();
-            ticket.success();
+            int[] tokens = AiTokenReporter.consume();
+            ticket.success(tokens == null ? null : tokens[0], tokens == null ? null : tokens[1]);
             return result;
         } catch (RuntimeException e) {
+            AiTokenReporter.clear();
             ticket.failure(e instanceof AiTutorException ? "PROVIDER_ERROR" : "INTERNAL_ERROR");
             throw e;
         }
     }
 
-    private void complete(UUID tenantId, UUID usageId, AiUsageStatus status, String errorCode) {
+    private void complete(UUID tenantId, UUID usageId, AiUsageStatus status, String errorCode,
+            Integer inputTokens, Integer outputTokens) {
         try {
             requiresNew.executeWithoutResult(tx -> repository.findByIdAndTenantId(usageId, tenantId)
                     .ifPresent(row -> {
                         row.setStatus(status);
                         row.setErrorCode(errorCode);
+                        row.setInputTokens(inputTokens);
+                        row.setOutputTokens(outputTokens);
                         row.setCompletedAt(Instant.now());
                         repository.save(row);
                     }));
@@ -150,19 +164,23 @@ public class AiUsageService {
         }
 
         public void success() {
-            finish(AiUsageStatus.SUCCESS, null);
+            success(null, null);
+        }
+
+        public void success(Integer inputTokens, Integer outputTokens) {
+            finish(AiUsageStatus.SUCCESS, null, inputTokens, outputTokens);
         }
 
         public void failure(String errorCode) {
-            finish(AiUsageStatus.FAILED, errorCode);
+            finish(AiUsageStatus.FAILED, errorCode, null, null);
         }
 
-        private void finish(AiUsageStatus status, String errorCode) {
+        private void finish(AiUsageStatus status, String errorCode, Integer in, Integer out) {
             if (finished) {
                 return;
             }
             finished = true;
-            complete(tenantId, usageId, status, errorCode);
+            complete(tenantId, usageId, status, errorCode, in, out);
         }
     }
 }

@@ -14,4 +14,8 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
     long countByTenantIdAndBatchIdAndCancelledFalse(UUID tenantId, UUID batchId);
 
     List<ClassSession> findByTenantIdAndBatchIdOrderBySessionDateDesc(UUID tenantId, UUID batchId);
+
+    // Used by LeaveRequestService to excuse the sessions a leave covers.
+    List<ClassSession> findByTenantIdAndBatchIdAndSessionDateBetweenAndCancelledFalse(
+            UUID tenantId, UUID batchId, LocalDate from, LocalDate to);
 }

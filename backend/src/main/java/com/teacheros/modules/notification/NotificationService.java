@@ -249,6 +249,40 @@ public class NotificationService {
         return created;
     }
 
+    // ---- Leave decision --------------------------------------------------
+
+    /**
+     * Tells the guardian (in-app, then SMS/email through the same deliver()
+     * path as every other alert) that a leave request was approved or
+     * rejected. Called from LeaveDecisionListener AFTER the decision commits,
+     * so REQUIRES_NEW for the same reason as notifyAbsences. No cooldown:
+     * each decision is a distinct event the family is waiting to hear about.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyLeaveDecision(UUID tenantId, UUID studentId, boolean approved, LocalDate from, LocalDate to,
+            String note) {
+        // Tenant-scoped lookup also drops any foreign/unknown student ID.
+        Student student = studentRepository.findByIdAndTenantId(studentId, tenantId).orElse(null);
+        if (student == null)
+            return;
+
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy");
+        String range = from.equals(to) ? from.format(fmt) : from.format(fmt) + " to " + to.format(fmt);
+        String title = approved ? "Leave approved" : "Leave not approved";
+        String message = "%s's leave for %s was %s."
+                .formatted(student.getFullName(), range, approved ? "approved" : "not approved");
+        if (note != null && !note.isBlank()) {
+            message = message + " Note: " + note.trim();
+        }
+        if (message.length() > 500) { // notifications.message is VARCHAR(500)
+            message = message.substring(0, 497) + "...";
+        }
+
+        notificationRepository.save(new Notification(tenantId, studentId, NotificationType.LEAVE_DECISION,
+                title, message));
+        deliver(student, title, message);
+    }
+
     // ---- Reads ----------------------------------------------------------
 
     // Open to PARENT/STUDENT via the controller (no @PreAuthorize there) -

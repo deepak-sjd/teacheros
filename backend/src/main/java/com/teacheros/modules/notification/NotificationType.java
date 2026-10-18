@@ -4,5 +4,6 @@ public enum NotificationType {
     LOW_ATTENDANCE,
     FEE_DUE,
     FEE_OVERDUE,
-    ABSENT
+    ABSENT,
+    LEAVE_DECISION
 }

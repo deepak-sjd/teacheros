@@ -38,3 +38,11 @@ app:
       study-plan: ${AI_LIMIT_STUDY_PLAN:300}
       content-questions: ${AI_LIMIT_CONTENT_QUESTIONS:200}
       content-notes: ${AI_LIMIT_CONTENT_NOTES:200}
+    # Used only for the owner's "estimated cost" figure. Rates are per MILLION
+    # tokens. Only calls from billed-provider are costed (ollama is self-hosted,
+    # log makes no real call). Update when the model/pricing changes.
+    cost:
+      billed-provider: ${AI_COST_BILLED_PROVIDER:anthropic}
+      input-per-million-tokens: ${AI_COST_INPUT_PER_MILLION:3.00}
+      output-per-million-tokens: ${AI_COST_OUTPUT_PER_MILLION:15.00}
+      currency: ${AI_COST_CURRENCY:USD}

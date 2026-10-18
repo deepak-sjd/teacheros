@@ -1,5 +1,6 @@
 package com.teacheros.modules.doubt;
 
+import com.teacheros.modules.ai.AiTokenReporter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -347,6 +348,9 @@ public class OllamaAiTutorClient implements AiTutorClient {
     private String extractText(String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
+            if (root.has("prompt_eval_count") || root.has("eval_count")) {
+                AiTokenReporter.report(root.path("prompt_eval_count").asInt(0), root.path("eval_count").asInt(0));
+            }
             String text = root.path("message").path("content").asText();
             if (text.isBlank()) {
                 throw new AiTutorException("Ollama response contained no message content", null);
