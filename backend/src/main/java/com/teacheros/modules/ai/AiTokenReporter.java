@@ -1,4 +1,5 @@
 package com.teacheros.modules.ai;
+import com.teacheros.modules.ai.AiTokenReporter;
 
 /**
  * Lets an AiTutorClient report the provider's token counts for the call it

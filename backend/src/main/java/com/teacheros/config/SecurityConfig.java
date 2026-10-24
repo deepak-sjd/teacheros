@@ -1,6 +1,10 @@
 package com.teacheros.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teacheros.common.security.JwtAuthenticationFilter;
+import com.teacheros.modules.security.ratelimit.ApiRateLimiter;
+import com.teacheros.modules.security.ratelimit.RateLimitFilter;
+import com.teacheros.modules.security.ratelimit.RateLimitProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,14 +34,23 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ApiRateLimiter apiRateLimiter;
+    private final RateLimitProperties rateLimitProperties;
+    private final ObjectMapper objectMapper;
     private final String allowedOrigins;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+            ApiRateLimiter apiRateLimiter,
+            RateLimitProperties rateLimitProperties,
+            ObjectMapper objectMapper,
             // Comma-separated exact origins. The dev default covers the Vite
             // dev server; prod must set CORS_ALLOWED_ORIGINS explicitly
             // (ProductionConfigValidator rejects blank or '*' there).
             @Value("${app.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}") String allowedOrigins) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.apiRateLimiter = apiRateLimiter;
+        this.rateLimitProperties = rateLimitProperties;
+        this.objectMapper = objectMapper;
         this.allowedOrigins = allowedOrigins;
     }
 
@@ -57,7 +70,11 @@ public class SecurityConfig {
                                 "/swagger-ui.html")
                         .permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // After the JWT filter so the per-user budget can see the authenticated user.
+                // Created with `new` (not a @Bean) so it is registered exactly once.
+                .addFilterAfter(new RateLimitFilter(apiRateLimiter, rateLimitProperties, objectMapper),
+                        JwtAuthenticationFilter.class);
 
         return http.build();
     }

@@ -1,9 +1,10 @@
 import { type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
+import { ConsentGate } from '@/components/ConsentGate'
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, role } = useAuth()
 
   if (loading) {
     return (
@@ -15,5 +16,5 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
-  return <>{children}</>
+  return role === 'PARENT' ? <ConsentGate>{children}</ConsentGate> : <>{children}</>
 }

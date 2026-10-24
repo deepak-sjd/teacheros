@@ -19,3 +19,6 @@ app:
 
 # Fail fast in prod if required secrets are missing rather than silently using dev defaults.
 # JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD must be provided via environment/secret manager.
+  security:
+    rate-limit:
+      provider: redis
