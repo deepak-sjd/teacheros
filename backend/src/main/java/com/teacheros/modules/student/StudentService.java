@@ -111,16 +111,34 @@ public class StudentService {
      * unsearched behaviour.
      */
     public Page<StudentResponse> list(UUID batchId, String search, Pageable pageable) {
+        return list(batchId, null, search, pageable);
+    }
+
+    /**
+     * sectionId (optional, SCHOOL tenants) narrows the list to one section.
+     * Null keeps every existing query exactly as it was, so batch and
+     * unfiltered behaviour does not change. A section id from another tenant
+     * simply matches nothing - every query is tenant-scoped.
+     */
+    public Page<StudentResponse> list(UUID batchId, UUID sectionId, String search, Pageable pageable) {
         UUID tenantId = currentTenantProvider.getCurrentTenantId();
 
         if (search != null && !search.isBlank()) {
             String pattern = "%" + escapeLike(search.trim().toLowerCase()) + "%";
-            return studentRepository.search(tenantId, batchId, pattern, pageable).map(this::toResponse);
+            Page<Student> found = sectionId == null
+                    ? studentRepository.search(tenantId, batchId, pattern, pageable)
+                    : studentRepository.searchInSection(tenantId, batchId, sectionId, pattern, pageable);
+            return found.map(this::toResponse);
         }
 
-        Page<Student> page = (batchId != null)
-                ? studentRepository.findByTenantIdAndBatchIdAndActiveTrue(tenantId, batchId, pageable)
-                : studentRepository.findByTenantIdAndActiveTrue(tenantId, pageable);
+        Page<Student> page;
+        if (sectionId != null) {
+            page = studentRepository.listInSection(tenantId, batchId, sectionId, pageable);
+        } else if (batchId != null) {
+            page = studentRepository.findByTenantIdAndBatchIdAndActiveTrue(tenantId, batchId, pageable);
+        } else {
+            page = studentRepository.findByTenantIdAndActiveTrue(tenantId, pageable);
+        }
         return page.map(this::toResponse);
     }
 

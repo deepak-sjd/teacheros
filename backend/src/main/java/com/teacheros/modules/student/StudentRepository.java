@@ -34,6 +34,34 @@ public interface StudentRepository extends JpaRepository<Student, UUID> {
             @Param("pattern") String pattern, Pageable pageable);
 
     /**
+     * Same as search, narrowed to one section (SCHOOL tenants). A separate
+     * query so the original search is untouched when no section is given.
+     */
+    @Query("""
+            SELECT s FROM Student s
+            WHERE s.tenantId = :tenantId AND s.active = true
+            AND s.sectionId = :sectionId
+            AND (:batchId IS NULL OR s.batchId = :batchId)
+            AND (LOWER(s.fullName) LIKE :pattern ESCAPE '!' OR s.guardianPhone LIKE :pattern ESCAPE '!')
+            ORDER BY s.fullName
+            """)
+    Page<Student> searchInSection(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
+            @Param("sectionId") UUID sectionId, @Param("pattern") String pattern, Pageable pageable);
+
+    /**
+     * Unsearched listing narrowed to one section. Sorting comes from the
+     * Pageable, like the derived finders it sits beside.
+     */
+    @Query("""
+            SELECT s FROM Student s
+            WHERE s.tenantId = :tenantId AND s.active = true
+            AND s.sectionId = :sectionId
+            AND (:batchId IS NULL OR s.batchId = :batchId)
+            """)
+    Page<Student> listInSection(@Param("tenantId") UUID tenantId, @Param("batchId") UUID batchId,
+            @Param("sectionId") UUID sectionId, Pageable pageable);
+
+    /**
      * Resolve names for a set of IDs (e.g. the students behind a page of
      * fees). Includes inactive students - a fee outlives a deactivation.
      */

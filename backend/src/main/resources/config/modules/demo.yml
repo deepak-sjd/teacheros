@@ -1,0 +1,5 @@
+app:
+  leads:
+    follow-up-reminder:
+      enabled: ${LEAD_REMINDER_ENABLED:true}
+      cron: ${LEAD_REMINDER_CRON:0 0 9 * * *}   # 9am daily, Asia/Kolkata

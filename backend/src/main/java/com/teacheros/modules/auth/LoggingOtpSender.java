@@ -13,7 +13,8 @@ import org.springframework.stereotype.Component;
  * enforced by application-prod.yml.
  */
 @Component
-@ConditionalOnProperty(name = "app.otp.delivery-mode", havingValue = "log", matchIfMissing = true)
+
+@ConditionalOnProperty(name = "app.security.rate-limit.provider", havingValue = "memory", matchIfMissing = true)
 public class LoggingOtpSender implements OtpSender {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingOtpSender.class);

@@ -47,19 +47,21 @@ public class StudentController {
     }
 
     // Default sort (name, then id as a tiebreaker) keeps page boundaries
-    // stable between requests. When a search term is given, the query in
-    // StudentRepository#search fixes its own ordering, so any sort on the
-    // Pageable is dropped (page number and size are kept).
+    // stable between requests. When a search term is given, the queries in
+    // StudentRepository#search/#searchInSection fix their own ordering, so
+    // any sort on the Pageable is dropped (page number and size are kept).
+    // sectionId is optional (SCHOOL tenants); without it nothing changes.
     @GetMapping
     @PreAuthorize("@perm.has('STUDENTS_VIEW')")
     public ResponseEntity<Page<StudentResponse>> list(
             @RequestParam(required = false) UUID batchId,
+            @RequestParam(required = false) UUID sectionId,
             @RequestParam(required = false) String search,
             @PageableDefault(size = 20, sort = { "fullName", "id" }) Pageable pageable) {
         Pageable effective = (search != null && !search.isBlank())
                 ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
                 : pageable;
-        return ResponseEntity.ok(studentService.list(batchId, search, effective));
+        return ResponseEntity.ok(studentService.list(batchId, sectionId, search, effective));
     }
 
     // Resolves a set of IDs to student records (names for a page of fees,

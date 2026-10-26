@@ -73,6 +73,19 @@ public class Student {
     @Column(name = "guardian2_relation", length = 50)
     private String guardian2Relation;
 
+    // ---- Academic placement (V30). SCHOOL tenants only; null otherwise. ----
+    // Set through modules.academic.StudentPlacementService, not the normal
+    // student create/update, so editing a student never clears it.
+
+    @Column(name = "section_id")
+    private UUID sectionId;
+
+    @Column(name = "roll_number", length = 20)
+    private String rollNumber;
+
+    @Column(name = "academic_year_id")
+    private UUID academicYearId;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 

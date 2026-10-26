@@ -23,6 +23,9 @@ public class Lead {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    @Column(name = "follow_up_reminded_for")
+    private LocalDate followUpRemindedFor;
+
     @Column(nullable = false)
     private String name;
 

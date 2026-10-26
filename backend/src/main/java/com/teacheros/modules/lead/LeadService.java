@@ -33,6 +33,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 /**
  * Staff-side lead pipeline. Every method takes the tenant from
@@ -51,6 +53,7 @@ public class LeadService {
     private final StudentRepository studentRepository;
     private final BatchRepository batchRepository;
     private final CurrentTenantProvider currentTenantProvider;
+    private static final ZoneId APP_ZONE = ZoneId.of("Asia/Kolkata");
 
     public LeadService(
             LeadRepository leadRepository,
@@ -250,5 +253,19 @@ public class LeadService {
 
     private String truncate(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /**
+     * Follow-ups due today or overdue on open leads; mineOnly = just the caller's
+     * (counsellor page).
+     */
+    public List<LeadResponse> dueFollowUps(boolean mineOnly) {
+        UUID tenantId = currentTenantProvider.getCurrentTenantId();
+        UUID assignedTo = mineOnly ? currentTenantProvider.getCurrentUserId() : null;
+        List<Lead> due = leadRepository.findDueFollowUps(tenantId, LocalDate.now(APP_ZONE),
+                List.of(LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.DEMO), assignedTo);
+        Map<UUID, String> names = userNames(tenantId,
+                due.stream().map(Lead::getAssignedTo).filter(Objects::nonNull).collect(Collectors.toSet()));
+        return due.stream().map(l -> toResponse(l, names)).toList();
     }
 }

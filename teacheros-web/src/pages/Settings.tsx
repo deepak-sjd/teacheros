@@ -4,6 +4,8 @@ import { Button, ErrorBanner, Input } from '@/components/ui'
 import { useAuth } from '@/lib/auth'
 import { api, ApiError } from '@/lib/api'
 import type { MyProfileResponse, TenantSettingsResponse } from '@/lib/types'
+import { PrivacySection } from '@/components/PrivacySection'
+// inside <div className="space-y-10 max-w-xl"> after the SchoolSection line:
 
 export function Settings() {
   const { role } = useAuth()
@@ -13,6 +15,8 @@ export function Settings() {
     <Layout>
       <PageHeader title="Settings" description="Your profile, and school settings if you manage this workspace." />
       <div className="space-y-10 max-w-xl">
+        {role === 'PARENT' && <PrivacySection />}
+
         <ProfileSection />
         {canEditSchool && <SchoolSection />}
       </div>

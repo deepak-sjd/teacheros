@@ -39,7 +39,7 @@ import { FeeDiscounts } from '@/pages/finance/FeeDiscounts'
 import { FinanceReports } from '@/pages/finance/FinanceReports'
 import { LeaveRoute } from '@/pages/LeaveRoute'
 import { StudentRecords } from '@/pages/student/Records'
-
+import { ErasureRequestsPage } from '@/pages/teacher/ErasureRequests'
 export default function App() {
   return (
     <BrowserRouter>
@@ -69,6 +69,7 @@ export default function App() {
             <Route path="/app/batches/:id" element={<ProtectedRoute><BatchDetail /></ProtectedRoute>} />
             <Route path="/app/leads" element={<ProtectedRoute><LeadsPage /></ProtectedRoute>} />
             <Route path="/courses" element={<PublicCourses />} />
+            <Route path="/app/erasure-requests" element={<ProtectedRoute><ErasureRequestsPage /></ProtectedRoute>} />
             <Route path="/courses/:id" element={<PublicCourseDetail />} />
             <Route path="/app/courses" element={<ProtectedRoute><CoursesPage /></ProtectedRoute>} />
             <Route path="/app/courses/:id/content" element={<ProtectedRoute><CourseContent /></ProtectedRoute>} />
