@@ -42,6 +42,8 @@ import { FinanceReports } from '@/pages/finance/FinanceReports'
 import { LeaveRoute } from '@/pages/LeaveRoute'
 import { StudentRecords } from '@/pages/student/Records'
 import { ErasureRequestsPage } from '@/pages/teacher/ErasureRequests'
+import { StaffPage } from '@/pages/settings/Staff'
+import { PermissionsPage } from '@/pages/settings/Permissions'
 export default function App() {
   return (
     <BrowserRouter>
@@ -87,6 +89,8 @@ export default function App() {
             <Route path="/app/finance-reports" element={<ProtectedRoute><FinanceReports /></ProtectedRoute>} />
             <Route path="/app/leave" element={<ProtectedRoute><LeaveRoute /></ProtectedRoute>} />
             <Route path="/app/records" element={<ProtectedRoute><StudentRecords /></ProtectedRoute>} />
+            <Route path="/app/staff" element={<ProtectedRoute><StaffPage /></ProtectedRoute>} />
+            <Route path="/app/permissions" element={<ProtectedRoute><PermissionsPage /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         </TenantBrandProvider>
