@@ -44,8 +44,6 @@ import java.util.stream.Collectors;
 @Service
 public class LearningService {
 
-    private static final int PLAYBACK_TTL_MINUTES = 15;
-
     private final CourseRepository courseRepository;
     private final ChapterRepository chapterRepository;
     private final LessonRepository lessonRepository;
@@ -54,11 +52,13 @@ public class LearningService {
     private final CourseEnrollmentChecker enrollmentChecker;
     private final VideoPlaybackSigner playbackSigner;
     private final CurrentTenantProvider currentTenantProvider;
+    private final VideoPlaybackPolicy playbackPolicy;
 
     public LearningService(CourseRepository courseRepository, ChapterRepository chapterRepository,
             LessonRepository lessonRepository, LessonProgressRepository progressRepository,
             StudentAccessGuard studentAccessGuard, CourseEnrollmentChecker enrollmentChecker,
-            VideoPlaybackSigner playbackSigner, CurrentTenantProvider currentTenantProvider) {
+            VideoPlaybackSigner playbackSigner, CurrentTenantProvider currentTenantProvider,
+            VideoPlaybackPolicy playbackPolicy) {
         this.courseRepository = courseRepository;
         this.chapterRepository = chapterRepository;
         this.lessonRepository = lessonRepository;
@@ -67,6 +67,7 @@ public class LearningService {
         this.enrollmentChecker = enrollmentChecker;
         this.playbackSigner = playbackSigner;
         this.currentTenantProvider = currentTenantProvider;
+        this.playbackPolicy = playbackPolicy;
     }
 
     public List<EnrolledCourseSummary> myCourses() {
@@ -129,9 +130,10 @@ public class LearningService {
         if (lesson.getType() != LessonType.VIDEO || lesson.getVideoRef() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "NOT_A_VIDEO", "This lesson isn't a video.");
         }
-        String url = playbackSigner.signedPlaybackUrl(lesson.getVideoProvider(), lesson.getVideoRef(),
-                Duration.ofMinutes(PLAYBACK_TTL_MINUTES));
-        return new PlaybackResponse(url, PLAYBACK_TTL_MINUTES);
+        // Only reached after requireLessonForStudent (enrolment) has passed.
+        Duration ttl = playbackPolicy.ttlFor(lesson.getDurationSeconds());
+        String url = playbackSigner.signedPlaybackUrl(lesson.getVideoProvider(), lesson.getVideoRef(), ttl);
+        return new PlaybackResponse(url, (int) ttl.toMinutes());
     }
 
     public ProgressResponse saveProgress(UUID lessonId, SaveProgressRequest request) {

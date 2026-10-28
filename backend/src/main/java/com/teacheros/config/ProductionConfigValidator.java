@@ -104,6 +104,28 @@ public class ProductionConfigValidator implements EnvironmentPostProcessor, Orde
             problems.add("CORS_ALLOWED_ORIGINS must not contain '*' (credentials are allowed).");
         }
 
+        // --- Video (recorded lectures) ---
+        String video = prop(env, "app.video.provider");
+        if (video.isEmpty() || video.equalsIgnoreCase("log")) {
+            problems.add(
+                    "VIDEO_PROVIDER must be a real provider ('bunny') in prod (log mode returns fake playback URLs, so no one can watch a lecture).");
+        } else if (video.equalsIgnoreCase("bunny")) {
+            if (prop(env, "app.video.bunny.library-id").isEmpty()) {
+                problems.add("BUNNY_LIBRARY_ID is blank.");
+            }
+            if (prop(env, "app.video.bunny.api-key").isEmpty()) {
+                problems.add("BUNNY_API_KEY is blank.");
+            }
+            if (prop(env, "app.video.bunny.cdn-host").isEmpty()) {
+                problems.add("BUNNY_CDN_HOST is blank.");
+            }
+            if (prop(env, "app.video.bunny.token-key").isEmpty()) {
+                problems.add("BUNNY_TOKEN_KEY is blank (the pull zone security key used to sign playback URLs).");
+            }
+        } else {
+            problems.add("VIDEO_PROVIDER '" + video + "' is not a supported provider (use 'bunny').");
+        }
+
         // --- Object storage ---
         if (prop(env, "app.storage.access-key").equals(DEV_STORAGE_ACCESS_KEY)
                 || prop(env, "app.storage.secret-key").equals(DEV_STORAGE_SECRET_KEY)) {

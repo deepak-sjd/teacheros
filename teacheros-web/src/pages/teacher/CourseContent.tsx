@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '@/lib/api'
-import type { LessonType, StaffChapter, StaffLesson } from '@/lib/types'
+import type { LessonType, StaffChapter, StaffLesson, VideoLibrary, VideoUpload } from '@/lib/types'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner, Input, Modal, Select, Skeleton, Textarea } from '@/components/ui'
 
@@ -211,11 +211,17 @@ function LessonModal({
   const [durationMinutes, setDurationMinutes] = useState('')
   const [notesText, setNotesText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
+  const [library, setLibrary] = useState<VideoUpload[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!state) return
+    setLibrary(null)
+    api
+      .get<VideoLibrary>('/api/v1/video-uploads')
+      .then((res) => setLibrary(res.uploads))
+      .catch(() => setLibrary([]))
     const l = state.lesson
     setTitle(l?.title ?? '')
     setType(l?.type ?? 'VIDEO')
@@ -265,8 +271,38 @@ function LessonModal({
 
         {type === 'VIDEO' && (
           <>
-            <Input label="Video provider" placeholder="e.g. mux, cloudflare, vimeo" value={videoProvider} onChange={(e) => setVideoProvider(e.target.value)} required />
-            <Input label="Video reference" placeholder="The provider's playback/asset ID" value={videoRef} onChange={(e) => setVideoRef(e.target.value)} required />
+            <Select
+              label="Video"
+              value={videoRef}
+              required
+              onChange={(e) => {
+                const chosen = (library ?? []).find((u) => u.videoRef === e.target.value)
+                if (!chosen) return
+                setVideoProvider(chosen.provider)
+                setVideoRef(chosen.videoRef)
+                if (chosen.durationSeconds) setDurationMinutes(String(Math.round(chosen.durationSeconds / 60)))
+              }}
+            >
+              <option value="">{library === null ? 'Loading your videos…' : 'Choose a video'}</option>
+              {/* A lesson saved before the library existed keeps its video selectable. */}
+              {videoRef && !(library ?? []).some((u) => u.videoRef === videoRef && u.status === 'READY') && (
+                <option value={videoRef}>Current video (not in your library)</option>
+              )}
+              {(library ?? [])
+                .filter((u) => u.status === 'READY')
+                .map((u) => (
+                  <option key={u.id} value={u.videoRef}>
+                    {u.title}
+                  </option>
+                ))}
+            </Select>
+            <p className="text-xs text-slate-light">
+              Only finished videos are listed.{' '}
+              <Link to="/app/videos" className="underline underline-offset-2 hover:text-ink">
+                Upload one in the Video Library
+              </Link>
+              .
+            </p>
             <Input label="Length in minutes (optional)" type="number" min="0" value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} />
             <p className="text-xs text-slate-light">Videos stay with your provider. Students only ever get a short-lived signed link.</p>
           </>

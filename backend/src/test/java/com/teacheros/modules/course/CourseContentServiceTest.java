@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,6 +36,8 @@ class CourseContentServiceTest {
     LessonRepository lessonRepository;
     @Mock
     CurrentTenantProvider currentTenantProvider;
+    @Mock
+    VideoAttachmentGuard videoAttachmentGuard;
 
     private CourseContentService service;
 
@@ -45,7 +48,7 @@ class CourseContentServiceTest {
     @BeforeEach
     void setUp() {
         service = new CourseContentService(courseRepository, chapterRepository, lessonRepository,
-                currentTenantProvider);
+                currentTenantProvider, videoAttachmentGuard);
         lenient().when(currentTenantProvider.getCurrentTenantId()).thenReturn(tenantId);
         lenient().when(lessonRepository.save(any(Lesson.class))).thenAnswer(i -> i.getArgument(0));
     }
@@ -97,5 +100,28 @@ class CourseContentServiceTest {
 
         assertThrows(ResourceNotFoundException.class, () -> service.createLesson(chapterId,
                 new SaveLessonRequest("Notes", LessonType.NOTES, null, null, "x", null, null, null)));
+    }
+
+    @Test
+    void createLesson_video_isCheckedAgainstThisTenantsLibrary() {
+        chapterExists();
+
+        service.createLesson(chapterId,
+                new SaveLessonRequest("Intro", LessonType.VIDEO, "bunny", "ref-1", null, null, 60, null));
+
+        verify(videoAttachmentGuard).assertAttachable(tenantId, "bunny", "ref-1");
+    }
+
+    @Test
+    void createLesson_videoThatIsNotAttachable_isRejectedAndNothingIsSaved() {
+        chapterExists();
+        doThrow(new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "UNKNOWN_VIDEO", "no"))
+                .when(videoAttachmentGuard).assertAttachable(tenantId, "bunny", "someone-elses");
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.createLesson(chapterId,
+                new SaveLessonRequest("Intro", LessonType.VIDEO, "bunny", "someone-elses", null, null, 60, null)));
+
+        assertEquals("UNKNOWN_VIDEO", ex.getCode());
+        verify(lessonRepository, never()).save(any());
     }
 }

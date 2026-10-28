@@ -1,18 +1,25 @@
 package com.teacheros.modules.feestructure;
 
 /**
- * Single place for this module's access rules.
+ * Single place for this module's access rules, now driven by the per-tenant
+ * permission matrix (role_permissions) instead of hard-coded roles.
  *
- * TODO(Dev 11): once the FEES_EDIT permission exists, change EDIT to
- * "hasAuthority('FEES_EDIT')" (or whatever Dev 11's mechanism is). Every
- * write endpoint in this module references this constant, so that is a
- * one-line change. Until then EDIT is a role check that excludes TEACHER and
- * STAFF, who can still VIEW.
+ * VIEW = FEES_VIEW. Defaults (V100) match the old role list exactly: OWNER,
+ * ADMIN, TEACHER, STAFF, ACCOUNTANT.
+ *
+ * EDIT = FEES_EDIT and FEES_CONFIGURE. Fee-structure writes were never open to
+ * TEACHER/STAFF, but those roles hold FEES_EDIT (they record payments through
+ * FeeController), so FEES_EDIT alone would have widened access. Requiring
+ * FEES_CONFIGURE as well (V101: OWNER, ADMIN, ACCOUNTANT) keeps the default
+ * behaviour identical, and removing FEES_EDIT from a role in the matrix still
+ * stops its fee writes everywhere.
+ *
+ * Both are compile-time constants so they can be used in @PreAuthorize.
  */
 public final class FeePermissions {
 
-    public static final String VIEW = "hasAnyRole('OWNER','TEACHER','STAFF','ADMIN','ACCOUNTANT')";
-    public static final String EDIT = "hasAnyRole('OWNER','ADMIN','ACCOUNTANT')";
+    public static final String VIEW = "@perm.has('FEES_VIEW')";
+    public static final String EDIT = "@perm.has('FEES_EDIT') and @perm.has('FEES_CONFIGURE')";
 
     private FeePermissions() {
     }

@@ -115,7 +115,16 @@ public class AuthService {
         otpCodeRepository.save(otpCode);
 
         User user = userRepository.findFirstByPhoneNumberAndActiveTrue(phoneNumber)
-                .orElseGet(() -> provisionAccountForPhone(phoneNumber, displayName, tenantName));
+                .orElseGet(() -> {
+                    // A deactivated staff member's phone must NOT fall through to
+                    // provisioning, which would sign it up as a brand-new owner of
+                    // a brand-new tenant. Checked only after the OTP is verified.
+                    if (userRepository.existsByPhoneNumberAndActiveFalse(phoneNumber)) {
+                        throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_DEACTIVATED",
+                                "This account has been deactivated. Please contact your school administrator.");
+                    }
+                    return provisionAccountForPhone(phoneNumber, displayName, tenantName);
+                });
 
         user.setLastLoginAt(Instant.now());
         userRepository.save(user);
@@ -131,15 +140,21 @@ public class AuthService {
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN",
                         "Please log in again."));
 
+        User user = userRepository.findById(existing.getUserId())
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "Please log in again."));
+
+        // A deactivated user can never refresh, even with a token that somehow
+        // survived deactivation (StaffService also revokes them all).
+        if (!user.isActive()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_DEACTIVATED", "Please log in again.");
+        }
+
         // Rotate: revoke the old token and issue a brand new pair. This means
         // a stolen-and-reused refresh token is immediately detectable (both
         // the attacker's and the legitimate user's next refresh will fail),
         // rather than a single long-lived token being reusable indefinitely.
         existing.setRevokedAt(Instant.now());
         refreshTokenRepository.save(existing);
-
-        User user = userRepository.findById(existing.getUserId())
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "Please log in again."));
 
         return issueTokenPair(user);
     }

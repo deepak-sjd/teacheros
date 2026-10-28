@@ -23,6 +23,11 @@ class ProductionConfigValidatorTest {
                 .withProperty("app.sms.twilio.account-sid", "AC123")
                 .withProperty("app.sms.twilio.auth-token", "tok")
                 .withProperty("app.sms.twilio.from-number", "+15550001111")
+                .withProperty("app.video.provider", "bunny")
+                .withProperty("app.video.bunny.library-id", "12345")
+                .withProperty("app.video.bunny.api-key", "bunny-api-key")
+                .withProperty("app.video.bunny.cdn-host", "vz-abc.b-cdn.net")
+                .withProperty("app.video.bunny.token-key", "bunny-token-key")
                 .withProperty("app.cors.allowed-origins", "https://app.teacheros.in")
                 .withProperty("app.storage.access-key", "AKIAREAL")
                 .withProperty("app.storage.secret-key", "real-storage-secret");
@@ -96,6 +101,34 @@ class ProductionConfigValidatorTest {
         assertThat(ProductionConfigValidator.findProblems(
                 validProd().withProperty("app.cors.allowed-origins", "")))
                 .anyMatch(p -> p.contains("CORS_ALLOWED_ORIGINS"));
+    }
+
+    @Test
+    void logOrBlankVideoProviderIsRejected() {
+        assertThat(ProductionConfigValidator.findProblems(validProd().withProperty("app.video.provider", "log")))
+                .anyMatch(p -> p.contains("VIDEO_PROVIDER"));
+        assertThat(ProductionConfigValidator.findProblems(validProd().withProperty("app.video.provider", "")))
+                .anyMatch(p -> p.contains("VIDEO_PROVIDER"));
+    }
+
+    @Test
+    void unknownVideoProviderIsRejected() {
+        assertThat(ProductionConfigValidator.findProblems(validProd().withProperty("app.video.provider", "vimeo")))
+                .anyMatch(p -> p.contains("not a supported provider"));
+    }
+
+    @Test
+    void blankBunnySettingsAreRejected() {
+        MockEnvironment env = validProd()
+                .withProperty("app.video.bunny.library-id", "")
+                .withProperty("app.video.bunny.api-key", "")
+                .withProperty("app.video.bunny.cdn-host", "")
+                .withProperty("app.video.bunny.token-key", "");
+        assertThat(ProductionConfigValidator.findProblems(env))
+                .anyMatch(p -> p.contains("BUNNY_LIBRARY_ID"))
+                .anyMatch(p -> p.contains("BUNNY_API_KEY"))
+                .anyMatch(p -> p.contains("BUNNY_CDN_HOST"))
+                .anyMatch(p -> p.contains("BUNNY_TOKEN_KEY"));
     }
 
     @Test

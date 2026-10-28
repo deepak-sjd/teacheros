@@ -13,4 +13,7 @@ public interface LessonRepository extends JpaRepository<Lesson, UUID> {
     List<Lesson> findByTenantIdAndCourseId(UUID tenantId, UUID courseId);
 
     List<Lesson> findByTenantIdAndChapterIdOrderByPositionAsc(UUID tenantId, UUID chapterId);
+
+    // Used by VideoUploadService: a video a lesson still points at can't be deleted.
+    boolean existsByTenantIdAndVideoProviderAndVideoRef(UUID tenantId, String videoProvider, String videoRef);
 }

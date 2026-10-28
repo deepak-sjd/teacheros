@@ -50,6 +50,8 @@ class LearningServiceTest {
     VideoPlaybackSigner playbackSigner;
     @Mock
     CurrentTenantProvider currentTenantProvider;
+    @Mock
+    VideoPlaybackPolicy playbackPolicy;
 
     private LearningService service;
 
@@ -62,7 +64,7 @@ class LearningServiceTest {
     @BeforeEach
     void setUp() {
         service = new LearningService(courseRepository, chapterRepository, lessonRepository, progressRepository,
-                studentAccessGuard, enrollmentChecker, playbackSigner, currentTenantProvider);
+                studentAccessGuard, enrollmentChecker, playbackSigner, currentTenantProvider, playbackPolicy);
         lenient().when(currentTenantProvider.getCurrentTenantId()).thenReturn(tenantId);
         lenient().when(studentAccessGuard.resolveCurrentStudentId()).thenReturn(studentId);
         lenient().when(progressRepository.save(any(LessonProgress.class))).thenAnswer(i -> i.getArgument(0));
@@ -138,6 +140,7 @@ class LearningServiceTest {
         when(lessonRepository.findByIdAndTenantId(lessonId, tenantId))
                 .thenReturn(Optional.of(lesson(LessonType.VIDEO)));
         enrolled(true);
+        when(playbackPolicy.ttlFor(any())).thenReturn(Duration.ofMinutes(15));
         when(playbackSigner.signedPlaybackUrl(eq("mux"), eq("abc123"), any(Duration.class)))
                 .thenReturn("https://signed.example/abc123?sig=1");
 
@@ -145,6 +148,34 @@ class LearningServiceTest {
 
         assertEquals("https://signed.example/abc123?sig=1", response.url());
         assertEquals(15, response.expiresInMinutes());
+    }
+
+    @Test
+    void playback_usesTheLifetimeFromThePolicyForTheLecturesLength() {
+        Lesson video = lesson(LessonType.VIDEO);
+        video.setDurationSeconds(3600);
+        when(lessonRepository.findByIdAndTenantId(lessonId, tenantId)).thenReturn(Optional.of(video));
+        enrolled(true);
+        when(playbackPolicy.ttlFor(3600)).thenReturn(Duration.ofMinutes(90));
+        when(playbackSigner.signedPlaybackUrl(eq("mux"), eq("abc123"), eq(Duration.ofMinutes(90))))
+                .thenReturn("https://signed.example/long");
+
+        PlaybackResponse response = service.getPlayback(lessonId);
+
+        assertEquals(90, response.expiresInMinutes());
+        assertEquals("https://signed.example/long", response.url());
+    }
+
+    @Test
+    void playback_whenNotEnrolled_isNotFoundAndNothingIsSigned() {
+        when(lessonRepository.findByIdAndTenantId(lessonId, tenantId))
+                .thenReturn(Optional.of(lesson(LessonType.VIDEO)));
+        enrolled(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> service.getPlayback(lessonId));
+
+        verify(playbackSigner, never()).signedPlaybackUrl(any(), any(), any());
+        verify(playbackPolicy, never()).ttlFor(any());
     }
 
     @Test

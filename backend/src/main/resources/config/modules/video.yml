@@ -1,0 +1,29 @@
+# Module: recorded-lecture video (provider, storage cap, playback lifetime).
+app:
+  video:
+    # "log" (dev default): fake ids and a placeholder playback URL, nothing
+    # leaves this machine. "bunny": Bunny Stream (see the bunny block).
+    # ProductionConfigValidator refuses "log" under the prod profile.
+    provider: ${VIDEO_PROVIDER:log}
+
+    # Per-tenant cap on stored video, and the largest single upload.
+    max-storage-gb-per-tenant: ${VIDEO_MAX_STORAGE_GB:50}
+    max-upload-gb: ${VIDEO_MAX_UPLOAD_GB:5}
+
+    # A signed playback URL must outlive the whole viewing session, because
+    # every HLS segment request is checked against the same expiry. The
+    # lifetime is max(base, lecture length + 30 min), never above the max.
+    playback-ttl-minutes: ${VIDEO_PLAYBACK_TTL_MINUTES:30}
+    playback-max-ttl-minutes: ${VIDEO_PLAYBACK_MAX_TTL_MINUTES:480}
+
+    bunny:
+      # Stream library id and that library's API key (Stream -> API).
+      library-id: ${BUNNY_LIBRARY_ID:}
+      api-key: ${BUNNY_API_KEY:}
+      # The library's CDN hostname, e.g. vz-xxxxxxxx-xxx.b-cdn.net
+      cdn-host: ${BUNNY_CDN_HOST:}
+      # The library's pull zone "Security key" (CDN token authentication).
+      # NOT the API key. Token Authentication must be enabled on the library.
+      token-key: ${BUNNY_TOKEN_KEY:}
+      api-base: ${BUNNY_API_BASE:https://video.bunnycdn.com}
+      tus-endpoint: ${BUNNY_TUS_ENDPOINT:https://video.bunnycdn.com/tusupload}

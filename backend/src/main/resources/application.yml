@@ -22,6 +22,7 @@ spring:
       - classpath:config/modules/storage.yml
       - classpath:config/modules/public.yml
       - classpath:config/modules/security.yml
+      - classpath:config/modules/video.yml
 
   # --- core: database ---
   datasource:
@@ -59,9 +60,6 @@ app:
     days-before-due: ${REMINDERS_DAYS_BEFORE_DUE:2}
     low-attendance-threshold: ${REMINDERS_LOW_ATTENDANCE_THRESHOLD:75}
 
-  video:
-    provider: ${VIDEO_PROVIDER:log}
-
 # --- core: server / ops ---
 server:
   port: ${SERVER_PORT:8080}
@@ -82,5 +80,3 @@ management:
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId}] %-5level %logger{36} - %msg%n"
-
-

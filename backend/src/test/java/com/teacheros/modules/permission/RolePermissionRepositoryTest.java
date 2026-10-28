@@ -22,9 +22,9 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Real Postgres + real Flyway (V100 included). Covers: the seeded defaults per
- * role, tenant isolation for role_permissions (the new tenant-owned table),
- * and seedDefaults idempotency.
+ * Real Postgres + real Flyway (V100, V101 included). Covers: the seeded
+ * defaults per role, tenant isolation for role_permissions, seedDefaults
+ * idempotency, and the grant/revoke queries behind the permissions matrix.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -57,9 +57,15 @@ class RolePermissionRepositoryTest {
                 String.class, role).stream().collect(Collectors.toSet());
     }
 
+    private Set<String> allExcept(String... excluded) {
+        Set<String> all = Arrays.stream(Permission.values()).map(Enum::name).collect(Collectors.toSet());
+        all.removeAll(Set.of(excluded));
+        return all;
+    }
+
     @Test
     void everySeededDefaultIsAKnownPermission() {
-        Set<String> known = Arrays.stream(Permission.values()).map(Enum::name).collect(Collectors.toSet());
+        Set<String> known = allExcept();
         List<String> seeded = jdbc.queryForList("SELECT DISTINCT permission FROM role_permission_defaults",
                 String.class);
 
@@ -68,20 +74,19 @@ class RolePermissionRepositoryTest {
     }
 
     @Test
-    void existingStaffRolesKeepEverythingTheyHadExceptNewLeadsCapability() {
-        Set<String> all = Arrays.stream(Permission.values()).map(Enum::name).collect(Collectors.toSet());
-        Set<String> allButLeads = all.stream().filter(p -> !p.equals("LEADS_MANAGE")).collect(Collectors.toSet());
-
-        assertEquals(all, defaultsFor("ADMIN"));
-        assertEquals(all, defaultsFor("STAFF"));
-        assertEquals(allButLeads, defaultsFor("TEACHER"));
+    void existingStaffRolesKeepEverythingTheyHadPlusTheNewFeeConfigureRule() {
+        assertEquals(allExcept(), defaultsFor("ADMIN"));
+        // STAFF/TEACHER could never edit fee structures, so they don't get FEES_CONFIGURE.
+        assertEquals(allExcept("FEES_CONFIGURE"), defaultsFor("STAFF"));
+        assertEquals(allExcept("FEES_CONFIGURE", "LEADS_MANAGE"), defaultsFor("TEACHER"));
     }
 
     @Test
     void accountantGetsFeesAndReportsButNoMarksHomeworkOrAttendance() {
         Set<String> accountant = defaultsFor("ACCOUNTANT");
 
-        assertEquals(Set.of("FEES_VIEW", "FEES_EDIT", "REPORTS_VIEW", "STUDENTS_VIEW", "BATCHES_VIEW"), accountant);
+        assertEquals(Set.of("FEES_VIEW", "FEES_EDIT", "FEES_CONFIGURE", "REPORTS_VIEW", "STUDENTS_VIEW",
+                "BATCHES_VIEW"), accountant);
         assertFalse(accountant.contains("MARKS_EDIT"));
         assertFalse(accountant.contains("MARKS_VIEW_ALL"));
         assertFalse(accountant.contains("HOMEWORK_EDIT"));
@@ -105,9 +110,8 @@ class RolePermissionRepositoryTest {
 
         assertTrue(repository.existsByTenantIdAndRoleAndPermission(tenantA, "ACCOUNTANT", "FEES_EDIT"));
         assertFalse(repository.existsByTenantIdAndRoleAndPermission(tenantA, "ACCOUNTANT", "MARKS_EDIT"));
-        // Tenant B was never seeded: nothing visible, even for the same
-        // role/permission.
         assertFalse(repository.existsByTenantIdAndRoleAndPermission(tenantB, "ACCOUNTANT", "FEES_EDIT"));
+        assertTrue(repository.findByTenantId(tenantB).isEmpty());
     }
 
     @Test
@@ -123,5 +127,25 @@ class RolePermissionRepositoryTest {
 
         assertTrue(first > 0);
         assertEquals(first, second);
+    }
+
+    @Test
+    void revokingAndGrantingOnlyAffectsTheNamedTenantAndRole() {
+        UUID a = newTenant("Tenant D");
+        UUID b = newTenant("Tenant E");
+        repository.seedDefaults(a);
+        repository.seedDefaults(b);
+
+        assertEquals(1, repository.revoke(a, "ACCOUNTANT", "FEES_EDIT"));
+        assertFalse(repository.existsByTenantIdAndRoleAndPermission(a, "ACCOUNTANT", "FEES_EDIT"));
+        // other tenant and other roles untouched
+        assertTrue(repository.existsByTenantIdAndRoleAndPermission(b, "ACCOUNTANT", "FEES_EDIT"));
+        assertTrue(repository.existsByTenantIdAndRoleAndPermission(a, "TEACHER", "FEES_EDIT"));
+        // revoking again removes nothing
+        assertEquals(0, repository.revoke(a, "ACCOUNTANT", "FEES_EDIT"));
+
+        assertEquals(1, repository.grant(a, "ACCOUNTANT", "FEES_EDIT"));
+        assertEquals(0, repository.grant(a, "ACCOUNTANT", "FEES_EDIT"), "granting twice must be a no-op");
+        assertTrue(repository.existsByTenantIdAndRoleAndPermission(a, "ACCOUNTANT", "FEES_EDIT"));
     }
 }

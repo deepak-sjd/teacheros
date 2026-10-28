@@ -31,6 +31,8 @@ import { AnnouncementsRoute } from '@/pages/AnnouncementsRoute'
 import { CourseContent } from '@/pages/teacher/CourseContent'
 import { StudentLearn } from '@/pages/student/Learn'
 import { StudentLearnCourse } from '@/pages/student/LearnCourse'
+import { VideoLibraryPage } from '@/pages/teacher/VideoLibrary'
+
 import { ExamTermsPage } from '@/pages/teacher/ExamTerms'
 import { ReportRemarksPage } from '@/pages/teacher/ReportRemarks'
 import { FeeSetup } from '@/pages/finance/FeeSetup'
@@ -74,6 +76,7 @@ export default function App() {
             <Route path="/app/courses" element={<ProtectedRoute><CoursesPage /></ProtectedRoute>} />
             <Route path="/app/courses/:id/content" element={<ProtectedRoute><CourseContent /></ProtectedRoute>} />
             <Route path="/app/learn" element={<ProtectedRoute><StudentLearn /></ProtectedRoute>} />
+            <Route path="/app/videos" element={<ProtectedRoute><VideoLibraryPage /></ProtectedRoute>} />
             <Route path="/app/learn/:courseId" element={<ProtectedRoute><StudentLearnCourse /></ProtectedRoute>} />
             <Route path="/app/announcements" element={<ProtectedRoute><AnnouncementsRoute /></ProtectedRoute>} />
             <Route path="/app/exam-terms" element={<ProtectedRoute><ExamTermsPage /></ProtectedRoute>} />

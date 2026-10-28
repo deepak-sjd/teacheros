@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Layout, PageHeader } from '@/components/Layout'
 import { Button, EmptyState, ErrorBanner, Skeleton } from '@/components/ui'
+import { HlsVideo } from '@/components/HlsVideo'
 import { api, ApiError } from '@/lib/api'
 import type {
   LearnCourse,
@@ -88,6 +89,7 @@ function LessonView({ lessonId, onProgress }: { lessonId: string; onProgress: ()
   const [error, setError] = useState<string | null>(null)
   const [completed, setCompleted] = useState(false)
   const lastSavedAt = useRef(0)
+  const lastRefreshAt = useRef(0)
 
   useEffect(() => {
     api
@@ -113,6 +115,18 @@ function LessonView({ lessonId, onProgress }: { lessonId: string; onProgress: ()
       .catch(() => {})
   }
 
+  // A signed URL stops working when it expires; the player calls this on a fatal
+  // network error to get a fresh one (throttled, so a dead connection doesn't hammer us).
+  function refreshPlayback() {
+    const now = Date.now()
+    if (now - lastRefreshAt.current < 10_000) return
+    lastRefreshAt.current = now
+    api
+      .get<PlaybackResponse>(`/api/v1/learn/lessons/${lessonId}/playback`)
+      .then((p) => setPlaybackUrl(p.url))
+      .catch(() => {})
+  }
+
   if (error) return <ErrorBanner message={error} />
   if (!lesson) return <Skeleton className="h-64 rounded-lg" />
 
@@ -122,23 +136,21 @@ function LessonView({ lessonId, onProgress }: { lessonId: string; onProgress: ()
 
       {lesson.type === 'VIDEO' &&
         (playbackUrl ? (
-          <video
+          <HlsVideo
             src={playbackUrl}
-            controls
+            // Resume where they left off (a finished lesson restarts from 0).
+            resumeAt={lesson.completed ? 0 : lesson.positionSeconds}
             className="w-full rounded-lg bg-ink"
-            onLoadedMetadata={(e) => {
-              // Resume where they left off (a finished lesson restarts from 0).
-              if (!lesson.completed && lesson.positionSeconds > 0) e.currentTarget.currentTime = lesson.positionSeconds
-            }}
-            onTimeUpdate={(e) => {
+            onSourceExpired={refreshPlayback}
+            onTimeUpdate={(seconds) => {
               const now = Date.now()
               if (now - lastSavedAt.current >= SAVE_EVERY_MS) {
                 lastSavedAt.current = now
-                save({ positionSeconds: Math.floor(e.currentTarget.currentTime) })
+                save({ positionSeconds: seconds })
               }
             }}
-            onPause={(e) => save({ positionSeconds: Math.floor(e.currentTarget.currentTime) })}
-            onEnded={(e) => save({ positionSeconds: Math.floor(e.currentTarget.currentTime), completed: true }, true)}
+            onPause={(seconds) => save({ positionSeconds: seconds })}
+            onEnded={(seconds) => save({ positionSeconds: seconds, completed: true }, true)}
           />
         ) : (
           <Skeleton className="h-64 rounded-lg" />

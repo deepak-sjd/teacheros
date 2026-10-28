@@ -15,11 +15,18 @@ public final class AuditActions {
     public static final String TEST_DELETED = "TEST_DELETED";
     public static final String STUDENT_DEACTIVATED = "STUDENT_DEACTIVATED";
     public static final String BATCH_DEACTIVATED = "BATCH_DEACTIVATED";
-    public static final String LEAVE_DECIDED = "LEAVE_DECIDED";
+
+    // Staff and permission administration (Dev 11)
+    public static final String STAFF_CREATED = "STAFF_CREATED";
+    public static final String STAFF_ROLE_CHANGED = "STAFF_ROLE_CHANGED";
+    public static final String STAFF_DEACTIVATED = "STAFF_DEACTIVATED";
+    public static final String STAFF_REACTIVATED = "STAFF_REACTIVATED";
+    public static final String PERMISSION_CHANGED = "PERMISSION_CHANGED";
 
     public static final String FEE = "FEE";
     public static final String TEST = "TEST";
     public static final String STUDENT = "STUDENT";
     public static final String BATCH = "BATCH";
-    public static final String LEAVE_REQUEST = "LEAVE_REQUEST";
+    public static final String STAFF = "STAFF";
+    public static final String ROLE_PERMISSION = "ROLE_PERMISSION";
 }

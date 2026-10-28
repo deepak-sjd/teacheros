@@ -29,13 +29,16 @@ public class CourseContentService {
     private final ChapterRepository chapterRepository;
     private final LessonRepository lessonRepository;
     private final CurrentTenantProvider currentTenantProvider;
+    private final VideoAttachmentGuard videoAttachmentGuard;
 
     public CourseContentService(CourseRepository courseRepository, ChapterRepository chapterRepository,
-            LessonRepository lessonRepository, CurrentTenantProvider currentTenantProvider) {
+            LessonRepository lessonRepository, CurrentTenantProvider currentTenantProvider,
+            VideoAttachmentGuard videoAttachmentGuard) {
         this.courseRepository = courseRepository;
         this.chapterRepository = chapterRepository;
         this.lessonRepository = lessonRepository;
         this.currentTenantProvider = currentTenantProvider;
+        this.videoAttachmentGuard = videoAttachmentGuard;
     }
 
     public List<StaffChapter> list(UUID courseId) {
@@ -133,6 +136,8 @@ public class CourseContentService {
                 if (provider == null || ref == null) {
                     throw invalid("A video lesson needs a video provider and a video reference.");
                 }
+                // The video must be a READY upload of THIS tenant (or the dev provider).
+                videoAttachmentGuard.assertAttachable(lesson.getTenantId(), provider, ref);
                 lesson.setVideoProvider(provider);
                 lesson.setVideoRef(ref);
             }
