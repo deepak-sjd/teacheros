@@ -97,7 +97,10 @@ public class AuthService {
         otpSender.send(phoneNumber, code);
     }
 
-    @Transactional
+    // noRollbackFor: a wrong code must still save the incremented attempt count.
+    // Every other ApiException (expired code, missing signup fields, deactivated
+    // account) still rolls back, so those never consume the OTP.
+    @Transactional(noRollbackFor = OtpIncorrectException.class)
     public TokenResponse verifyOtp(String phoneNumber, String code, String displayName, String tenantName) {
         OtpCode otpCode = otpCodeRepository.findTopByPhoneNumberOrderByCreatedAtDesc(phoneNumber)
                 .filter(OtpCode::isUsable)
@@ -108,7 +111,7 @@ public class AuthService {
 
         if (!BCrypt.checkpw(code, otpCode.getCodeHash())) {
             otpCodeRepository.save(otpCode);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "OTP_INCORRECT", "That code is incorrect.");
+            throw new OtpIncorrectException();
         }
 
         otpCode.setConsumedAt(Instant.now());
