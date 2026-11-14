@@ -3,6 +3,7 @@ package com.teacheros.modules.payment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teacheros.common.exception.ApiException;
+import com.teacheros.common.security.rls.SystemContext;
 import com.teacheros.modules.fee.FeeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,16 +34,19 @@ public class PaymentWebhookService {
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final FeeService feeService;
+    private final SystemContext systemContext;
     private final ObjectMapper objectMapper;
     private final String webhookSecret;
 
     public PaymentWebhookService(
             PaymentOrderRepository paymentOrderRepository,
             FeeService feeService,
+            SystemContext systemContext,
             ObjectMapper objectMapper,
             @Value("${app.payment.razorpay.webhook-secret:}") String webhookSecret) {
         this.paymentOrderRepository = paymentOrderRepository;
         this.feeService = feeService;
+        this.systemContext = systemContext;
         this.objectMapper = objectMapper;
         this.webhookSecret = webhookSecret;
     }
@@ -88,9 +92,13 @@ public class PaymentWebhookService {
                             amount, order.getAmountInPaise(), orderId);
                     return;
                 }
-                feeService.recordGatewayPaymentForTenant(order.getTenantId(), order.getFeeId(),
-                        BigDecimal.valueOf(order.getAmountInPaise()).movePointLeft(2),
-                        "razorpay", orderId, paymentId);
+                // No JWT on a webhook, so the DB session has no tenant and row-level security
+                // would hide the fee. The tenant comes from our own stored order (never the
+                // request) and recordGatewayPaymentForTenant filters by it explicitly, so
+                // running with RLS bypass here is safe.
+                systemContext.run(() -> feeService.recordGatewayPaymentForTenant(order.getTenantId(),
+                        order.getFeeId(), BigDecimal.valueOf(order.getAmountInPaise()).movePointLeft(2),
+                        "razorpay", orderId, paymentId));
                 order.setStatus(PaymentOrderStatus.PAID);
                 paymentOrderRepository.save(order);
             }

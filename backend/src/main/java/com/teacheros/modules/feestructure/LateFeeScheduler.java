@@ -1,5 +1,6 @@
 package com.teacheros.modules.feestructure;
 
+import com.teacheros.common.security.rls.SystemContext;
 import com.teacheros.modules.tenant.Tenant;
 import com.teacheros.modules.tenant.TenantRepository;
 import org.slf4j.Logger;
@@ -31,10 +32,13 @@ public class LateFeeScheduler {
 
     private final TenantRepository tenantRepository;
     private final LateFeeService lateFeeService;
+    private final SystemContext systemContext;
 
-    public LateFeeScheduler(TenantRepository tenantRepository, LateFeeService lateFeeService) {
+    public LateFeeScheduler(TenantRepository tenantRepository, LateFeeService lateFeeService,
+            SystemContext systemContext) {
         this.tenantRepository = tenantRepository;
         this.lateFeeService = lateFeeService;
+        this.systemContext = systemContext;
     }
 
     @Scheduled(cron = "0 30 2 * * *", zone = "Asia/Kolkata")
@@ -45,7 +49,9 @@ public class LateFeeScheduler {
                 continue;
             }
             try {
-                int created = lateFeeService.applyForTenant(tenant.getId(), today, null);
+                // A scheduler has no JWT, so without SystemContext row-level security hides
+                // every fee.
+                int created = systemContext.call(() -> lateFeeService.applyForTenant(tenant.getId(), today, null));
                 if (created > 0) {
                     log.info("Late fees: tenant={} created={}", tenant.getId(), created);
                 }

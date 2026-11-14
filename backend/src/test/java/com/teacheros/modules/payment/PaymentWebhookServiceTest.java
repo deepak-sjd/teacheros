@@ -1,5 +1,6 @@
 package com.teacheros.modules.payment;
 
+import com.teacheros.common.security.rls.SystemContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.modules.fee.FeeService;
@@ -34,7 +35,14 @@ class PaymentWebhookServiceTest {
     void setUp() {
         orders = mock(PaymentOrderRepository.class);
         feeService = mock(FeeService.class);
-        service = new PaymentWebhookService(orders, feeService, new ObjectMapper(), SECRET);
+        SystemContext systemContext = mock(SystemContext.class);
+        // Run the work inline, as the real SystemContext does (minus the
+        // transaction/RLS bypass).
+        doAnswer(inv -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return null;
+        }).when(systemContext).run(any());
+        service = new PaymentWebhookService(orders, feeService, systemContext, new ObjectMapper(), SECRET);
     }
 
     private String body(String event, long amount) {

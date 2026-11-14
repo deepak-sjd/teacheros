@@ -1,5 +1,6 @@
 package com.teacheros.modules.notification;
 
+import com.teacheros.common.security.rls.SystemContext;
 import com.teacheros.modules.notification.dto.NotificationDtos.GenerateResult;
 import com.teacheros.modules.tenant.Tenant;
 import com.teacheros.modules.tenant.TenantRepository;
@@ -32,6 +33,7 @@ public class ReminderScheduler {
 
     private final TenantRepository tenantRepository;
     private final NotificationService notificationService;
+    private final SystemContext systemContext;
     private final ZoneId zone;
     private final int daysBeforeDue;
     private final double lowAttendanceThreshold;
@@ -39,11 +41,13 @@ public class ReminderScheduler {
     public ReminderScheduler(
             TenantRepository tenantRepository,
             NotificationService notificationService,
+            SystemContext systemContext,
             @Value("${app.timezone:Asia/Kolkata}") String timezone,
             @Value("${app.reminders.days-before-due:2}") int daysBeforeDue,
             @Value("${app.reminders.low-attendance-threshold:75}") double lowAttendanceThreshold) {
         this.tenantRepository = tenantRepository;
         this.notificationService = notificationService;
+        this.systemContext = systemContext;
         this.zone = ZoneId.of(timezone);
         this.daysBeforeDue = daysBeforeDue;
         this.lowAttendanceThreshold = lowAttendanceThreshold;
@@ -71,7 +75,8 @@ public class ReminderScheduler {
         for (Tenant tenant : tenantRepository.findAllByActiveTrue()) {
             tenants++;
             try {
-                alerts += action.apply(tenant.getId()).created();
+                // No JWT on a scheduler thread: RLS would hide fees/students without this.
+                alerts += systemContext.call(() -> action.apply(tenant.getId())).created();
             } catch (Exception e) {
                 failures++;
                 log.error("Scheduled {} failed for tenant {}: {}", jobName, tenant.getId(), e.getMessage(), e);
