@@ -1,9 +1,5 @@
 package com.teacheros.modules.auth;
 
-public class RedisOtpRateLimiterTest {
-
-}package com.teacheros.modules.auth;
-
 import com.teacheros.common.exception.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

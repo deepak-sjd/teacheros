@@ -44,6 +44,7 @@ import { StudentRecords } from '@/pages/student/Records'
 import { ErasureRequestsPage } from '@/pages/teacher/ErasureRequests'
 import { StaffPage } from '@/pages/settings/Staff'
 import { PermissionsPage } from '@/pages/settings/Permissions'
+import { AiUsagePage } from '@/pages/owner/AiUsage'
 export default function App() {
   return (
     <BrowserRouter>
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="/app/records" element={<ProtectedRoute><StudentRecords /></ProtectedRoute>} />
             <Route path="/app/staff" element={<ProtectedRoute><StaffPage /></ProtectedRoute>} />
             <Route path="/app/permissions" element={<ProtectedRoute><PermissionsPage /></ProtectedRoute>} />
+            <Route path="/app/ai-usage" element={<ProtectedRoute><AiUsagePage /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         </TenantBrandProvider>

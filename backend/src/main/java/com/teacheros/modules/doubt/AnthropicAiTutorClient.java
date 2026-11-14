@@ -51,7 +51,7 @@ public class AnthropicAiTutorClient implements AiTutorClient {
             // Override via ANTHROPIC_MODEL if/when a newer model should be
             // used - deliberately not hardcoded deeper than this one
             // default, since model names change over time.
-            @Value("${app.ai.anthropic.model:claude-sonnet-5}") String model,
+            @Value("${app.ai.anthropic.model:claude-sonnet-5-5}") String model,
             @Value("${app.ai.anthropic.max-tokens:500}") int maxTokens,
             // A tutoring answer is a short paragraph; a batch of MCQ
             // questions (or a page of study notes) is a lot more text, so

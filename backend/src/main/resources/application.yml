@@ -16,6 +16,8 @@ spring:
   config:
     import:
       - classpath:config/modules/ai.yml
+      - classpath:config/modules/compliance.yml
+      - classpath:config/modules/demo.yml
       - classpath:config/modules/auth.yml
       - classpath:config/modules/notifications.yml
       - classpath:config/modules/payments.yml

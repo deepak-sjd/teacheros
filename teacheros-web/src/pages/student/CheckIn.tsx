@@ -30,7 +30,6 @@ export function StudentCheckIn() {
     try {
      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
      streamRef.current = stream
-     console.log('Camera track:', stream.getVideoTracks()[0]?.label, stream.getVideoTracks()[0]?.getSettings())
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()

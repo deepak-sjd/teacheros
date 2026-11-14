@@ -63,6 +63,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/**",
+                                // Unauthenticated visitor endpoints: enquiry form, demo booking, public course
+                                // catalog.
+                                // Rate-limited by RateLimitFilter; tenant is resolved from the school slug.
+                                "/api/v1/public/**",
                                 "/api/v1/payments/webhook",
                                 "/actuator/health",
                                 "/v3/api-docs/**",
