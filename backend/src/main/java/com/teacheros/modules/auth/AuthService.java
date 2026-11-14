@@ -2,6 +2,7 @@ package com.teacheros.modules.auth;
 
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.security.JwtService;
+import com.teacheros.common.security.rls.SystemContext;
 import com.teacheros.modules.auth.dto.TokenResponse;
 import com.teacheros.modules.permission.PermissionService;
 import com.teacheros.modules.student.Student;
@@ -59,6 +60,7 @@ public class AuthService {
     private final OtpSender otpSender;
     private final JwtService jwtService;
     private final PermissionService permissionService;
+    private final SystemContext systemContext;
     private final int otpTtlMinutes;
     private final int accessTokenTtlMinutes;
     private final int refreshTokenTtlDays;
@@ -72,6 +74,7 @@ public class AuthService {
             OtpSender otpSender,
             JwtService jwtService,
             PermissionService permissionService,
+            SystemContext systemContext,
             @Value("${app.otp.ttl-minutes}") int otpTtlMinutes,
             @Value("${app.jwt.access-token-ttl-minutes}") int accessTokenTtlMinutes,
             @Value("${app.jwt.refresh-token-ttl-days}") int refreshTokenTtlDays) {
@@ -83,6 +86,7 @@ public class AuthService {
         this.otpSender = otpSender;
         this.jwtService = jwtService;
         this.permissionService = permissionService;
+        this.systemContext = systemContext;
         this.otpTtlMinutes = otpTtlMinutes;
         this.accessTokenTtlMinutes = accessTokenTtlMinutes;
         this.refreshTokenTtlDays = refreshTokenTtlDays;
@@ -181,7 +185,15 @@ public class AuthService {
      * authorization anywhere.
      */
     private User provisionAccountForPhone(String phoneNumber, String displayName, String tenantName) {
-        Optional<Student> guardianMatch = studentRepository.findFirstByGuardianPhoneAndActiveTrue(phoneNumber);
+        // The caller is not logged in yet, so the DB session has no tenant and
+        // row-level
+        // security would hide every student. This phone lookup is the one place that
+        // must
+        // search across tenants, so it runs in SystemContext (RLS bypass). Only the
+        // lookup
+        // is wrapped; the account is created afterwards in the student's own tenant.
+        Optional<Student> guardianMatch = systemContext
+                .call(() -> studentRepository.findFirstByGuardianPhoneAndActiveTrue(phoneNumber));
         if (guardianMatch.isPresent()) {
             Student student = guardianMatch.get();
             String name = (displayName == null || displayName.isBlank()) ? "Parent" : displayName;
@@ -189,7 +201,8 @@ public class AuthService {
             return userRepository.save(user);
         }
 
-        Optional<Student> studentMatch = studentRepository.findFirstByPhoneNumberAndActiveTrue(phoneNumber);
+        Optional<Student> studentMatch = systemContext
+                .call(() -> studentRepository.findFirstByPhoneNumberAndActiveTrue(phoneNumber));
         if (studentMatch.isPresent()) {
             Student student = studentMatch.get();
             String name = (displayName == null || displayName.isBlank()) ? student.getFullName() : displayName;

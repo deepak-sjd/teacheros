@@ -2,6 +2,7 @@ package com.teacheros.modules.auth;
 
 import com.teacheros.common.exception.ApiException;
 import com.teacheros.common.security.JwtService;
+import com.teacheros.common.security.rls.SystemContext;
 import com.teacheros.modules.auth.dto.TokenResponse;
 import com.teacheros.modules.permission.PermissionService;
 import com.teacheros.modules.student.StudentRepository;
@@ -22,6 +23,7 @@ import org.springframework.security.crypto.bcrypt.BCrypt;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,27 +32,43 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Deactivated staff can't log in, can't be re-signed-up as a new owner, and can't refresh. */
+/**
+ * Deactivated staff can't log in, can't be re-signed-up as a new owner, and
+ * can't refresh.
+ */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AuthServiceDeactivationTest {
 
     private static final String PHONE = "919876543210";
 
-    @Mock OtpCodeRepository otpCodeRepository;
-    @Mock UserRepository userRepository;
-    @Mock TenantRepository tenantRepository;
-    @Mock RefreshTokenRepository refreshTokenRepository;
-    @Mock StudentRepository studentRepository;
-    @Mock OtpSender otpSender;
-    @Mock JwtService jwtService;
-    @Mock PermissionService permissionService;
+    @Mock
+    OtpCodeRepository otpCodeRepository;
+    @Mock
+    UserRepository userRepository;
+    @Mock
+    TenantRepository tenantRepository;
+    @Mock
+    RefreshTokenRepository refreshTokenRepository;
+    @Mock
+    StudentRepository studentRepository;
+    @Mock
+    OtpSender otpSender;
+    @Mock
+    JwtService jwtService;
+    @Mock
+    PermissionService permissionService;
+    @Mock
+    SystemContext systemContext;
     AuthService service;
 
     @BeforeEach
     void setUp() {
         service = new AuthService(otpCodeRepository, userRepository, tenantRepository, refreshTokenRepository,
-                studentRepository, otpSender, jwtService, permissionService, 5, 15, 30);
+                studentRepository, otpSender, jwtService, permissionService, systemContext, 5, 15, 30);
+        // Run the work inline, as the real SystemContext does (minus the
+        // transaction/RLS bypass).
+        when(systemContext.call(any())).thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
         OtpCode otp = new OtpCode(PHONE, BCrypt.hashpw("123456", BCrypt.gensalt()), Instant.now().plusSeconds(300));
         when(otpCodeRepository.findTopByPhoneNumberOrderByCreatedAtDesc(PHONE)).thenReturn(Optional.of(otp));
         when(jwtService.issueAccessToken(any(), any(), any())).thenReturn("access");
