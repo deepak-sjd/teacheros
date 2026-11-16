@@ -1,4 +1,4 @@
-package com.teacheros.common.security.rls;
+package com.teacheros.common.rls;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
